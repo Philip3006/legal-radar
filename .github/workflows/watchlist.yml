@@ -1,0 +1,53 @@
+name: watchlist
+on:
+  schedule:
+    - cron: "0 6 * * *"   # täglich 06:00 UTC (08:00 MESZ)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --frozen
+
+      - name: DB-Cache laden (vom radar.yml befüllt)
+        uses: actions/cache@v4
+        with:
+          path: data/radar.db
+          key: radar-db-watchlist-${{ github.run_id }}
+          restore-keys: |
+            radar-db-
+
+      - name: Config aus Secrets bauen
+        env:
+          DIGEST_ABSENDER: ${{ secrets.DIGEST_ABSENDER }}
+          DIGEST_EMPFAENGER: ${{ secrets.DIGEST_EMPFAENGER }}
+        run: |
+          python - <<'PY'
+          import os, yaml
+          empf = [e.strip() for e in os.environ["DIGEST_EMPFAENGER"].split(",") if e.strip()]
+          cfg = {
+            "prefilter_min_aufwand_eur": 10_000_000,
+            "digest_absender": os.environ["DIGEST_ABSENDER"],
+            "digest_empfaenger": empf,
+          }
+          with open("data/config.yaml", "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
+          PY
+
+      - name: Watchlist-Digest
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RADAR_REPO: ${{ github.repository }}
+        run: |
+          uv run radar init
+          uv run radar watchlist-digest --since 1d --send-mail

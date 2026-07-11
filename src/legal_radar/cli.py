@@ -7,11 +7,12 @@ from pathlib import Path
 import anthropic
 import typer
 
-from legal_radar.core import db, hashing, smtp
+from legal_radar.core import db, github, hashing, smtp
 from legal_radar.core.config import Settings
-from legal_radar.digest.events import events_since
+from legal_radar.digest import summary as summary_mod
+from legal_radar.digest.events import Event, events_since
 from legal_radar.digest.html import render_html
-from legal_radar.digest.mail import render_mail
+from legal_radar.digest.mail import render_mail, render_watchlist_mail
 from legal_radar.digest.render import render
 from legal_radar.extract import llm, rules
 from legal_radar.score import deterministic
@@ -209,8 +210,11 @@ def score(dry_run: bool = False) -> None:
 
 
 @app.command()
-def digest(since: str = "7d", send_mail: bool = True) -> None:
-    """Ereignis-Digest ausgeben und optional per E-Mail versenden."""
+def digest(since: str = "7d", send_mail: bool = False) -> None:
+    """Ereignis-Digest ausgeben und optional per E-Mail versenden.
+
+    Default: nur stdout. Mit --send-mail geht die Mail an digest_empfaenger.
+    """
     s = Settings.load()
     con = db.connect(s.db_path)
     tage = int(since.rstrip("d"))
@@ -233,13 +237,79 @@ def digest(since: str = "7d", send_mail: bool = True) -> None:
 
 
 @app.command("render-dashboard")
-def render_dashboard(out: Path = Path("docs/index.html")) -> None:
-    """Statisches HTML-Dashboard aus DB erzeugen."""
+def render_dashboard(
+    out: Path = Path("docs/index.html"),
+    skip_summary: bool = False,
+) -> None:
+    """Statisches HTML-Dashboard aus DB erzeugen.
+
+    Liest Watchlist von GitHub (wenn GITHUB_TOKEN gesetzt) und ruft die
+    LLM-Wochenzusammenfassung (wenn ANTHROPIC_API_KEY gesetzt und nicht --skip-summary).
+    """
     s = Settings.load()
     con = db.connect(s.db_path)
+    db.migrate(con)
+
+    summary_text = None
+    if not skip_summary and s.anthropic_api_key:
+        try:
+            client = anthropic.Anthropic(api_key=s.anthropic_api_key)
+            summary_text = summary_mod.erzeuge_summary(con, client)
+        except Exception as e:
+            # LLM-Fehler soll das Dashboard-Rendering nicht killen
+            typer.echo(f"Summary-Fehler ignoriert: {e}", err=True)
+
+    watched = set(github.liste_watchlist_ids(s.radar_repo, s.github_token))
+    if watched:
+        typer.echo(f"Watchlist: {len(watched)} Vorgang(e)")
+
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render_html(con), encoding="utf-8")
+    out.write_text(
+        render_html(con, summary_text=summary_text, watched_ids=watched,
+                    radar_repo=s.radar_repo),
+        encoding="utf-8",
+    )
     typer.echo(f"ok: {out}")
+
+
+@app.command("watchlist-digest")
+def watchlist_digest(since: str = "1d", send_mail: bool = False) -> None:
+    """Taeglicher Watchlist-Digest.
+
+    Liest die Watchlist von GitHub, prueft Aenderungen der letzten N Tage,
+    schickt Mail nur wenn tatsaechlich Aenderungen vorliegen.
+    """
+    s = Settings.load()
+    con = db.connect(s.db_path)
+    tage = int(since.rstrip("d"))
+
+    watched = set(github.liste_watchlist_ids(s.radar_repo, s.github_token))
+    if not watched:
+        typer.echo("Watchlist ist leer. Keine Mail.")
+        return
+
+    alle_events = events_since(con, tage)
+    events: list[Event] = [e for e in alle_events if e.vorgang_id in watched]
+
+    if not events:
+        typer.echo(f"Keine Aenderungen an {len(watched)} beobachteten Vorgaengen. Keine Mail.")
+        return
+
+    kw = f"letzte {tage} Tag{'e' if tage != 1 else ''}"
+    text = render(events, kw=kw)
+    typer.echo(text)
+
+    if send_mail and s.smtp_url and s.digest_empfaenger:
+        gesendet = smtp.send(
+            subject=f"Watchlist-Update — {len(events)} Bewegung(en)",
+            body=text,
+            html_body=render_watchlist_mail(events, kw=kw),
+            smtp_url=s.smtp_url,
+            recipients=s.digest_empfaenger,
+            sender=s.digest_absender,
+        )
+        if gesendet:
+            typer.echo(f"\n-> Watchlist-Digest an {len(s.digest_empfaenger)} Empfaenger.")
 
 
 @app.command()

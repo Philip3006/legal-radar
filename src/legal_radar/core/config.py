@@ -17,6 +17,8 @@ class Settings(BaseModel):
     smtp_url: str = ""
     digest_empfaenger: list[str] = []
     digest_absender: str = "radar@legal-radar.local"
+    github_token: str = ""
+    radar_repo: str = "Philip3006/legal-radar"
 
     @classmethod
     def load(cls) -> Settings:
@@ -32,4 +34,6 @@ class Settings(BaseModel):
             smtp_url=os.getenv("SMTP_URL", ""),
             digest_empfaenger=cfg.get("digest_empfaenger", []) or [],
             digest_absender=cfg.get("digest_absender", "radar@legal-radar.local"),
+            github_token=os.getenv("GITHUB_TOKEN", ""),
+            radar_repo=os.getenv("RADAR_REPO", "Philip3006/legal-radar"),
         )

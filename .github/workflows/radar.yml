@@ -3,9 +3,15 @@ on:
   schedule:
     - cron: "0 5 * * 1"   # wöchentlich, Montag. Gesetzgebung bewegt sich in Wochen.
   workflow_dispatch:
+    inputs:
+      send_mail:
+        description: "Digest-Mail an alle Empfaenger schicken"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # nötig für Dashboard-Commit auf main
+  issues: read      # nötig für Watchlist-Lesen
 
 jobs:
   run:
@@ -51,11 +57,13 @@ jobs:
           DIP_API_KEY: ${{ secrets.DIP_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SMTP_URL: ${{ secrets.SMTP_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RADAR_REPO: ${{ github.repository }}
         run: |
           uv run radar init
           uv run radar fetch --source dip --since 2024-01-01
           uv run radar score
-          uv run radar digest --since 7d
+          uv run radar digest --since 7d ${{ inputs.send_mail && '--send-mail' || '' }}
           uv run radar render-dashboard
 
       - name: Dashboard deployen

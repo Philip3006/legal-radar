@@ -1,7 +1,11 @@
 """Statisches HTML-Dashboard. Kein JS.
 
-Filter via :checked-Radio-Buttons, Onboarding via <details>.
-Score bleibt intern (nur Sortierung), wird nirgendwo angezeigt.
+Aesthetik: Modern-Dark, Linear/Vercel-inspired.
+Struktur: Header -> Filter -> Summary-Card -> Watchlist-Rubrik -> Neu diese Woche
+          -> Gruppen nach Stadium -> Footer.
+
+Filter via :checked-Radio-Buttons, Onboarding via <details>, Watchlist via
+GitHub Issues (Klick oeffnet Issue-Formular vorbelegt).
 """
 
 from __future__ import annotations
@@ -9,6 +13,7 @@ from __future__ import annotations
 import html
 import sqlite3
 from datetime import date, timedelta
+from urllib.parse import quote
 
 STADIUM_LABEL = {
     "referentenentwurf": "Referentenentwurf",
@@ -21,16 +26,15 @@ STADIUM_LABEL = {
 }
 
 STADIUM_FARBE = {
-    "referentenentwurf": "#eab308",
-    "kabinett": "#eab308",
+    "referentenentwurf": "#f59e0b",
+    "kabinett": "#f59e0b",
     "bt": "#f59e0b",
     "ausschuss": "#f59e0b",
-    "verkuendet": "#6b7280",
-    "anwendbar": "#16a34a",
-    "tot": "#dc2626",
+    "verkuendet": "#737373",
+    "anwendbar": "#10b981",
+    "tot": "#ef4444",
 }
 
-# Welche Stadien in welcher Gruppen-Sektion landen (Reihenfolge = Anzeige-Reihenfolge)
 GRUPPEN = [
     ("aktiv", "Im Verfahren", ["referentenentwurf", "kabinett", "bt", "ausschuss"]),
     ("anwendbar", "Anwendbar / Verkuendet", ["anwendbar", "verkuendet"]),
@@ -44,6 +48,8 @@ MUSTER_LABEL = {
     "datenprodukt": "Datenprodukt",
     "keins": "-",
 }
+
+TOP_N_NEU = 5
 
 
 def _fmt_eur(v: int | None) -> str:
@@ -62,11 +68,6 @@ def _fmt_zahl(v: int | None) -> str:
     return f"{v:,}".replace(",", ".")
 
 
-def _has_table(con: sqlite3.Connection, name: str) -> bool:
-    r = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
-    return r is not None
-
-
 def _fmt_datum(iso: str | None) -> str:
     if not iso:
         return "offen"
@@ -76,16 +77,39 @@ def _fmt_datum(iso: str | None) -> str:
         return iso
 
 
-def _gruppe_fuer_stadium(stadium: str) -> str:
-    for key, _label, stadien in GRUPPEN:
-        if stadium in stadien:
-            return key
-    return "aktiv"
+def _has_table(con: sqlite3.Connection, name: str) -> bool:
+    r = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+    return r is not None
 
 
-def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool = False) -> str:
+def _issue_url(repo: str, vorgang_id: str, titel: str) -> str:
+    """URL zum Anlegen eines Watchlist-Issues auf GitHub, vorbelegt."""
+    body = (
+        f"vorgang_id: {vorgang_id}\n\n"
+        f"(Bitte die erste Zeile nicht aendern - der Watchlist-Cron liest sie.)"
+    )
+    return (
+        f"https://github.com/{repo}/issues/new?"
+        f"labels=watchlist"
+        f"&title={quote('Watchlist: ' + titel[:80])}"
+        f"&body={quote(body)}"
+    )
+
+
+def _watchlist_action(row: sqlite3.Row, watched: set[str], repo: str) -> str:
+    if row["id"] in watched:
+        return '<span class="watch-badge" title="Auf deiner Watchlist">★ Auf Watchlist</span>'
+    url = _issue_url(repo, row["id"], row["titel"] or "")
+    return (
+        f'<a class="watch-add" href="{html.escape(url)}" '
+        f'target="_blank" rel="noopener" title="Auf Watchlist setzen">+ Merken</a>'
+    )
+
+
+def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row],
+          is_neu: bool, watched: set[str], repo: str) -> str:
     stadium = row["stadium"] or "bt"
-    farbe = STADIUM_FARBE.get(stadium, "#6b7280")
+    farbe = STADIUM_FARBE.get(stadium, "#737373")
     stadium_txt = html.escape(STADIUM_LABEL.get(stadium, stadium))
     muster_key = row["muster"] or "keins"
     muster_txt = html.escape(MUSTER_LABEL.get(muster_key, "-"))
@@ -94,30 +118,38 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool = False) 
     aufwand = html.escape(_fmt_eur(row["erf_aufwand_eur"]))
     anwendung = html.escape(_fmt_datum(row["anwendungsbeginn"]))
     behoerde = html.escape(row["behoerde"] or "-")
-    betroffene = html.escape(_fmt_zahl(row["betroffene"]) if "betroffene" in row.keys() else "-")
+    try:
+        betroffene_val = row["betroffene"]
+    except (IndexError, KeyError):
+        betroffene_val = None
+    betroffene = html.escape(_fmt_zahl(betroffene_val))
 
+    pflichten_block = ""
     if pflichten:
         items = "".join(
             f"<li><strong>{html.escape(p['typ'])}</strong>: "
             f"{html.escape(p['gegenstand'])}"
-            f"{' &middot; ' + html.escape(p['frequenz']) if p['frequenz'] else ''}"
+            f"{' <span class=freq>' + html.escape(p['frequenz']) + '</span>'
+              if p['frequenz'] else ''}"
             f"</li>"
             for p in pflichten
         )
         pflichten_block = f'<ul class="pflichten">{items}</ul>'
-    else:
-        pflichten_block = ""
 
     neu_badge = '<span class="badge badge-neu">Neu</span>' if is_neu else ""
+    watch_action = _watchlist_action(row, watched, repo)
 
     return f"""
     <article class="card" data-stadium="{stadium}" data-muster="{muster_key}">
       <div class="card-head">
-        <span class="badge" style="background:{farbe}">{stadium_txt}</span>
-        <span class="badge badge-outline">{muster_txt}</span>
-        {neu_badge}
+        <div class="card-badges">
+          <span class="badge" style="--dot:{farbe}">{stadium_txt}</span>
+          <span class="badge badge-outline">{muster_txt}</span>
+          {neu_badge}
+        </div>
+        <div class="card-actions">{watch_action}</div>
       </div>
-      <h2><a href="{url}" target="_blank" rel="noopener">{titel}</a></h2>
+      <h3 class="card-titel"><a href="{url}" target="_blank" rel="noopener">{titel}</a></h3>
       <dl class="meta">
         <div><dt>Anwendung</dt><dd>{anwendung}</dd></div>
         <div><dt>Erfuellungsaufwand</dt><dd>{aufwand}</dd></div>
@@ -129,17 +161,57 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool = False) 
     """
 
 
+def _summary_card(summary_text: str | None, counts: dict[str, int], n_total: int) -> str:
+    if not summary_text:
+        return ""
+    ct_bits = []
+    if counts.get("neu"):
+        ct_bits.append(f"<strong>{counts['neu']}</strong> neu")
+    wechsel = counts.get("stadium", 0) + counts.get("fenster", 0)
+    if wechsel:
+        ct_bits.append(f"<strong>{wechsel}</strong> Wechsel")
+    if counts.get("aufwand"):
+        ct_bits.append(f"<strong>{counts['aufwand']}</strong> Aufwand-Update")
+    ct_line = " &middot; ".join(ct_bits) or f"{n_total} Vorgaenge im Radar"
+
+    return f"""
+    <section class="summary-card">
+      <div class="summary-label">Zusammenfassung diese Woche</div>
+      <p class="summary-text">{html.escape(summary_text)}</p>
+      <div class="summary-counts">{ct_line}</div>
+    </section>
+    """
+
+
+def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict,
+                      watched: set[str], repo: str) -> str:
+    if not watched:
+        return ""
+    wrows = [r for r in rows if r["id"] in watched]
+    if not wrows:
+        return (
+            '<section class="rubrik watchlist-rubrik">'
+            '<h2 class="rubrik-titel">★ Meine Watchlist</h2>'
+            '<p class="empty-inline">Deine Watchlist ist gesetzt, aber die Vorgaenge '
+            'sind derzeit nicht im Radar. Vielleicht sind sie gestorben oder aus dem '
+            'Fetch-Fenster gefallen.</p>'
+            '</section>'
+        )
+    cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched, repo) for r in wrows)
+    return f"""
+    <section class="rubrik watchlist-rubrik">
+      <h2 class="rubrik-titel">★ Meine Watchlist <span class="count">({len(wrows)})</span></h2>
+      <div class="cards cards-watchlist">{cards}</div>
+    </section>
+    """
+
+
 def _events_diese_woche(con: sqlite3.Connection, tage: int = 7) -> dict[str, list[dict]]:
-    """{vorgang_id: [event, ...]} fuer alles was in den letzten `tage` Tagen passiert ist."""
     if not _has_table(con, "vorgang_history"):
         return {}
     rows = con.execute(
-        """
-        SELECT vorgang_id, feld, alt, neu, ts
-        FROM vorgang_history
-        WHERE ts >= date('now', ?)
-        ORDER BY ts DESC
-        """,
+        "SELECT vorgang_id, feld, alt, neu, ts FROM vorgang_history "
+        "WHERE ts >= date('now', ?) ORDER BY ts DESC",
         (f"-{tage} days",),
     ).fetchall()
     out: dict[str, list[dict]] = {}
@@ -148,70 +220,70 @@ def _events_diese_woche(con: sqlite3.Connection, tage: int = 7) -> dict[str, lis
     return out
 
 
-def _event_label(ev: dict) -> str:
-    feld, alt, neu = ev["feld"], ev["alt"], ev["neu"]
-    if feld == "stadium":
-        alt_txt = STADIUM_LABEL.get(alt, alt or "?")
-        neu_txt = STADIUM_LABEL.get(neu, neu or "?")
-        return f"Stadium: {alt_txt} &rarr; {neu_txt}"
-    if feld == "erf_aufwand_eur":
-        return f"Aufwand: {_fmt_eur(int(alt) if alt else None)} &rarr; {_fmt_eur(int(neu) if neu else None)}"
-    if feld == "anwendungsbeginn":
-        return f"Anwendungsbeginn: {_fmt_datum(alt)} &rarr; {_fmt_datum(neu)}"
-    return f"{html.escape(feld)}: {html.escape(str(alt))} &rarr; {html.escape(str(neu))}"
+def _event_counts(events: dict[str, list[dict]], neu_ids: set[str]) -> dict[str, int]:
+    counts = {"neu": len(neu_ids), "stadium": 0, "fenster": 0, "aufwand": 0, "tot": 0}
+    for ev_list in events.values():
+        for ev in ev_list:
+            if ev["feld"] == "stadium":
+                counts["tot" if ev["neu"] == "tot" else "stadium"] += 1
+            elif ev["feld"] == "erf_aufwand_eur":
+                counts["aufwand"] += 1
+            elif ev["feld"] == "anwendungsbeginn":
+                counts["fenster"] += 1
+    return counts
 
 
-def _neu_sektion(rows: list[sqlite3.Row], events: dict[str, list[dict]]) -> str:
-    neu_ids = set()
+def _neu_sektion(rows: list[sqlite3.Row], pflichten: dict,
+                events: dict[str, list[dict]], watched: set[str], repo: str) -> str:
     grenzdatum = (date.today() - timedelta(days=7)).isoformat()
-    for r in rows:
-        if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum:
-            neu_ids.add(r["id"])
-    neu_ids.update(events.keys())
+    neu_rows = [r for r in rows if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum]
 
-    if not neu_ids:
+    # Rows, die zwar nicht "neu" sind, aber ein Event der Woche haben
+    aenderungs_ids = set(events.keys()) - {r["id"] for r in neu_rows}
+    aenderungs_rows = [r for r in rows if r["id"] in aenderungs_ids]
+
+    if not neu_rows and not aenderungs_rows:
         return ""
 
-    row_by_id = {r["id"]: r for r in rows}
-    items = []
-    for vid in neu_ids:
-        r = row_by_id.get(vid)
-        if not r:
-            continue
-        titel = html.escape(r["titel"] or "")
-        url = html.escape(r["quelle_url"] or "")
-        ev_list = events.get(vid, [])
-        is_neu_ganz = r["erstgesehen"] and r["erstgesehen"] >= grenzdatum
+    kombiniert = neu_rows + aenderungs_rows
+    # Nach Score sortiert (rows sind schon so sortiert)
+    top = kombiniert[:TOP_N_NEU]
+    rest = kombiniert[TOP_N_NEU:]
 
-        details = []
-        if is_neu_ganz and not ev_list:
-            details.append("Neu im Radar")
-        for ev in ev_list[:3]:
-            details.append(_event_label(ev))
-        detail_txt = " &middot; ".join(details)
-
-        items.append(
-            f'<li><a href="{url}" target="_blank" rel="noopener">{titel}</a>'
-            f'<span class="ev-detail">{detail_txt}</span></li>'
+    top_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched, repo) for r in top)
+    rest_block = ""
+    if rest:
+        rest_cards = "\n".join(
+            _card(r, pflichten.get(r["id"], []), True, watched, repo) for r in rest
         )
+        rest_block = f"""
+        <details class="rest-fold">
+          <summary>Alle {len(rest)} weiteren aus dieser Woche anzeigen</summary>
+          <div class="cards">{rest_cards}</div>
+        </details>
+        """
 
     return f"""
-    <section class="neu-sektion">
-      <h2>Neu diese Woche <span class="count">({len(items)})</span></h2>
-      <ul class="ev-list">
-        {"".join(items)}
-      </ul>
+    <section class="rubrik neu-rubrik">
+      <h2 class="rubrik-titel">Neu diese Woche
+        <span class="count">({len(kombiniert)})</span>
+      </h2>
+      <div class="cards">{top_cards}</div>
+      {rest_block}
     </section>
     """
 
 
-def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict) -> str:
+def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict,
+                      watched: set[str], repo: str) -> str:
     out_parts = []
     for key, label, stadien in GRUPPEN:
         gruppe_rows = [r for r in rows if (r["stadium"] or "bt") in stadien]
         if not gruppe_rows:
             continue
-        cards = "\n".join(_card(r, pflichten.get(r["id"], [])) for r in gruppe_rows)
+        cards = "\n".join(
+            _card(r, pflichten.get(r["id"], []), False, watched, repo) for r in gruppe_rows
+        )
         out_parts.append(
             f'<section class="gruppe gruppe-{key}">'
             f'<h2 class="gruppe-titel">{label} '
@@ -222,7 +294,14 @@ def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict) -> str:
     return "\n".join(out_parts) or '<p class="empty">Noch keine Vorgaenge im Radar.</p>'
 
 
-def render_html(con: sqlite3.Connection) -> str:
+def render_html(
+    con: sqlite3.Connection,
+    summary_text: str | None = None,
+    watched_ids: set[str] | None = None,
+    radar_repo: str = "Philip3006/legal-radar",
+) -> str:
+    watched = watched_ids or set()
+
     rows = con.execute(
         """
         SELECT id, titel, stadium, muster, anwendungsbeginn, erf_aufwand_eur,
@@ -239,82 +318,139 @@ def render_html(con: sqlite3.Connection) -> str:
             pflichten_by_vid.setdefault(p["vorgang_id"], []).append(p)
 
     events = _events_diese_woche(con)
+    grenzdatum = (date.today() - timedelta(days=7)).isoformat()
+    neu_ids = {r["id"] for r in rows if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum}
+    counts = _event_counts(events, neu_ids)
 
     stand = date.today().strftime("%d.%m.%Y")
     n = len(rows)
 
-    neu_sektion = _neu_sektion(rows, events)
-    gruppen = _gruppen_sektionen(rows, pflichten_by_vid)
+    summary_html = _summary_card(summary_text, counts, n)
+    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched, radar_repo)
+    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched, radar_repo)
+    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched, radar_repo)
 
+    return _shell(stand, n, summary_html, watchlist_html, neu_html, gruppen_html)
+
+
+def _shell(stand: str, n: int, summary: str, watchlist: str,
+           neu: str, gruppen: str) -> str:
     return f"""<!doctype html>
 <html lang="de">
 <head>
 <meta charset="utf-8">
 <title>Legal Radar</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
 <style>
   :root {{
-    --bg: #f5f6f8; --surface: #ffffff; --text: #111827; --muted: #6b7280;
-    --border: #e5e7eb; --accent: #1f2937; --accent-soft: #eef2ff;
-    --neu: #2563eb;
+    color-scheme: dark;
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface-2: #1a1a1a;
+    --text: #f5f5f5;
+    --text-soft: #a3a3a3;
+    --muted: #737373;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --accent: #10b981;
+    --accent-soft: rgba(16,185,129,0.12);
+    --neu: #3b82f6;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --radius: 14px;
+    --radius-sm: 8px;
   }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
-    background: var(--bg); color: var(--text); margin: 0;
-    line-height: 1.5;
-  }}
-  header {{
-    background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 24px 32px;
-  }}
-  header .titelzeile {{ display: flex; align-items: baseline; justify-content: space-between;
-                       flex-wrap: wrap; gap: 12px; max-width: 1000px; margin: 0 auto; }}
-  header h1 {{ margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }}
-  header .sub {{ color: var(--muted); font-size: 14px; }}
 
-  details.info {{
-    max-width: 1000px; margin: 12px auto 0; padding: 0;
-    font-size: 14px;
+  * {{ box-sizing: border-box; }}
+  html {{ -webkit-text-size-adjust: 100%; }}
+  body {{
+    background: var(--bg); color: var(--text); margin: 0;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                 "Segoe UI", Roboto, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }}
+  @supports (font-variation-settings: normal) {{
+    body {{ font-family: "Inter var", -apple-system, sans-serif; }}
+  }}
+
+  a {{ color: inherit; }}
+
+  header {{
+    padding: 40px 32px 24px;
+    border-bottom: 1px solid var(--border);
+  }}
+  .header-inner {{ max-width: 1100px; margin: 0 auto; }}
+  .titelzeile {{ display: flex; align-items: baseline; justify-content: space-between;
+                 flex-wrap: wrap; gap: 12px; }}
+  h1 {{
+    margin: 0; font-size: 30px; font-weight: 600;
+    letter-spacing: -0.025em; line-height: 1.1;
+  }}
+  .sub {{ color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }}
+
+  details.info {{ margin-top: 20px; font-size: 14px; }}
   details.info summary {{
-    cursor: pointer; color: var(--neu); font-weight: 500;
-    padding: 4px 0; user-select: none;
+    cursor: pointer; color: var(--text-soft); font-weight: 500;
+    padding: 4px 0; user-select: none; list-style: none;
   }}
   details.info summary::-webkit-details-marker {{ display: none; }}
-  details.info summary::before {{ content: "› "; display: inline-block;
-    transition: transform 0.15s; }}
-  details.info[open] summary::before {{ transform: rotate(90deg); }}
-  details.info .info-body {{
-    background: var(--accent-soft); border-radius: 8px; padding: 16px 20px;
-    margin-top: 8px; color: var(--text);
+  details.info summary::before {{
+    content: "\\203A"; display: inline-block; margin-right: 6px;
+    color: var(--muted); transition: transform 150ms ease;
   }}
-  details.info .info-body p {{ margin: 0 0 8px; }}
+  details.info[open] summary::before {{ transform: rotate(90deg); color: var(--accent); }}
+  details.info .info-body {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 24px; margin-top: 12px;
+    color: var(--text-soft);
+  }}
+  details.info .info-body p {{ margin: 0 0 10px; }}
   details.info .info-body p:last-child {{ margin: 0; }}
-  details.info .info-body strong {{ color: var(--accent); }}
+  details.info .info-body strong {{ color: var(--text); font-weight: 500; }}
 
-  main {{ max-width: 1000px; margin: 0 auto; padding: 24px 32px 48px; }}
+  main {{ max-width: 1100px; margin: 0 auto; padding: 24px 32px 64px; }}
 
+  /* Filter-Bar: sticky, blur */
+  .filter-bar-wrap {{
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in oklab, var(--bg) 88%, transparent);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    margin: 0 -32px 32px; padding: 12px 32px;
+    border-bottom: 1px solid var(--border);
+  }}
   .filter-bar {{
-    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;
+    max-width: 1100px; margin: 0 auto;
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
   }}
   .filter-bar input[type=radio] {{ position: absolute; opacity: 0; pointer-events: none; }}
   .filter-bar label {{
     padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
-    background: var(--surface); font-size: 13px; cursor: pointer; user-select: none;
-    color: var(--text);
+    background: transparent; font-size: 13px; cursor: pointer;
+    color: var(--text-soft); font-weight: 500;
+    transition: all 150ms ease;
   }}
-  .filter-bar label:hover {{ background: #f3f4f6; }}
-  #f-all:checked ~ .filter-bar label[for=f-all],
-  #f-aktiv:checked ~ .filter-bar label[for=f-aktiv],
-  #f-anwendbar:checked ~ .filter-bar label[for=f-anwendbar],
-  #f-tot:checked ~ .filter-bar label[for=f-tot],
-  #f-compliance:checked ~ .filter-bar label[for=f-compliance],
-  #f-nachweis:checked ~ .filter-bar label[for=f-nachweis] {{
-    background: var(--accent); color: white; border-color: var(--accent);
+  .filter-bar label:hover {{
+    background: var(--surface); color: var(--text); border-color: var(--border-strong);
   }}
+  #f-all:checked ~ * label[for=f-all],
+  #f-aktiv:checked ~ * label[for=f-aktiv],
+  #f-anwendbar:checked ~ * label[for=f-anwendbar],
+  #f-tot:checked ~ * label[for=f-tot],
+  #f-compliance:checked ~ * label[for=f-compliance],
+  #f-nachweis:checked ~ * label[for=f-nachweis] {{
+    background: var(--text); color: var(--bg); border-color: var(--text);
+  }}
+  .filter-bar .filter-sep {{ width: 1px; height: 20px; background: var(--border);
+                             margin: 0 6px; }}
 
-  /* Filter-Logik: default alle sichtbar */
+  /* Filter-Logik */
   #f-aktiv:checked ~ main .card {{ display: none; }}
   #f-aktiv:checked ~ main .card[data-stadium="referentenentwurf"],
   #f-aktiv:checked ~ main .card[data-stadium="kabinett"],
@@ -339,69 +475,174 @@ def render_html(con: sqlite3.Connection) -> str:
   #f-nachweis:checked ~ main .card {{ display: none; }}
   #f-nachweis:checked ~ main .card[data-muster="nachweis"] {{ display: block; }}
 
-  .neu-sektion {{
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    padding: 20px 24px; margin-bottom: 24px;
-    border-left: 4px solid var(--neu);
+  /* Summary-Card */
+  .summary-card {{
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px 28px; margin-bottom: 24px;
+    position: relative; overflow: hidden;
   }}
-  .neu-sektion h2 {{ margin: 0 0 12px; font-size: 15px; font-weight: 600;
-                    text-transform: uppercase; letter-spacing: 0.04em; color: var(--neu); }}
-  .neu-sektion .count {{ color: var(--muted); font-weight: 400; }}
-  .ev-list {{ list-style: none; padding: 0; margin: 0; }}
-  .ev-list li {{ padding: 8px 0; border-top: 1px solid var(--border); }}
-  .ev-list li:first-child {{ border-top: none; padding-top: 0; }}
-  .ev-list a {{ color: var(--text); font-weight: 500; text-decoration: none; }}
-  .ev-list a:hover {{ text-decoration: underline; }}
-  .ev-detail {{ display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }}
+  .summary-card::before {{
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+    background: linear-gradient(180deg, var(--accent), var(--neu));
+  }}
+  .summary-label {{
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); font-weight: 600; margin-bottom: 10px;
+  }}
+  .summary-text {{
+    margin: 0; font-size: 17px; line-height: 1.55; color: var(--text);
+    font-weight: 400; max-width: 68ch;
+  }}
+  .summary-counts {{
+    margin-top: 14px; font-size: 13px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }}
+  .summary-counts strong {{ color: var(--text); font-weight: 600; }}
 
-  .gruppe {{ margin-bottom: 32px; }}
-  .gruppe-titel {{ font-size: 13px; font-weight: 600; color: var(--muted);
-                   text-transform: uppercase; letter-spacing: 0.06em;
-                   margin: 0 0 12px; padding-left: 4px; }}
+  /* Rubrik = Section-Wrapper */
+  .rubrik {{ margin-bottom: 32px; }}
+  .rubrik-titel {{
+    font-size: 14px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted);
+    margin: 0 0 16px; padding-left: 2px;
+  }}
+  .rubrik-titel .count {{ color: var(--muted); font-weight: 400; }}
+
+  .neu-rubrik .rubrik-titel {{ color: var(--neu); }}
+  .watchlist-rubrik .rubrik-titel {{ color: var(--amber); }}
+
+  /* Gruppen */
+  .gruppe {{ margin-bottom: 40px; }}
+  .gruppe-titel {{
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--muted);
+    margin: 0 0 14px; padding-left: 2px;
+  }}
   .gruppe-titel .count {{ font-weight: 400; }}
 
-  .cards {{ display: grid; gap: 12px; }}
+  /* Cards */
+  .cards {{ display: grid; gap: 10px; }}
+  .cards-watchlist {{ grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }}
   .card {{
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    padding: 20px 24px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 22px 24px;
+    transition: border-color 150ms ease, background 150ms ease;
   }}
-  .card-head {{ display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }}
-  .card h2 {{ margin: 4px 0 16px; font-size: 17px; font-weight: 600; }}
-  .card h2 a {{ color: var(--text); text-decoration: none; }}
-  .card h2 a:hover {{ text-decoration: underline; }}
+  .card:hover {{
+    border-color: var(--border-strong);
+    background: var(--surface-2);
+  }}
+  .card-head {{
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 12px; margin-bottom: 6px;
+  }}
+  .card-badges {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+  .card-actions {{ flex-shrink: 0; }}
+  .card-titel {{
+    margin: 6px 0 18px; font-size: 16px; font-weight: 600;
+    letter-spacing: -0.005em; line-height: 1.4;
+  }}
+  .card-titel a {{ color: var(--text); text-decoration: none; }}
+  .card-titel a:hover {{ color: var(--accent); }}
+
   .badge {{
-    display: inline-block; padding: 2px 10px; border-radius: 999px;
-    font-size: 12px; font-weight: 500; color: white;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px 3px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 500; color: var(--text-soft);
+    background: var(--surface-2); border: 1px solid var(--border);
+    letter-spacing: 0.01em;
   }}
-  .badge-outline {{
-    background: transparent !important; color: var(--muted);
-    border: 1px solid var(--border);
+  .badge::before {{
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--dot, var(--muted));
   }}
+  .badge-outline {{ background: transparent; }}
+  .badge-outline::before {{ display: none; }}
   .badge-neu {{
-    background: var(--neu) !important; color: white;
+    background: var(--accent-soft); color: var(--accent);
+    border-color: rgba(16,185,129,0.3);
   }}
+  .badge-neu::before {{ background: var(--accent); }}
+
+  .watch-add, .watch-badge {{
+    font-size: 12px; padding: 4px 10px; border-radius: 6px;
+    font-weight: 500; white-space: nowrap;
+  }}
+  .watch-add {{
+    color: var(--muted); text-decoration: none;
+    border: 1px solid var(--border); background: transparent;
+    transition: all 150ms ease;
+  }}
+  .watch-add:hover {{ color: var(--amber); border-color: var(--amber);
+                      background: rgba(245,158,11,0.08); }}
+  .watch-badge {{ color: var(--amber); background: rgba(245,158,11,0.1);
+                  border: 1px solid rgba(245,158,11,0.25); }}
+
   .meta {{
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
-    margin: 0; font-size: 14px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
+    margin: 0; font-size: 13px;
+    font-variant-numeric: tabular-nums;
   }}
-  .meta div {{ display: flex; flex-direction: column; }}
-  .meta dt {{ color: var(--muted); font-size: 12px; text-transform: uppercase;
-             letter-spacing: 0.03em; }}
-  .meta dd {{ margin: 2px 0 0; font-weight: 500; }}
+  .meta div {{ display: flex; flex-direction: column; min-width: 0; }}
+  .meta dt {{
+    color: var(--muted); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 500; margin-bottom: 4px;
+  }}
+  .meta dd {{ margin: 0; font-weight: 500; color: var(--text); }}
+
   .pflichten {{
-    margin: 16px 0 0; padding: 12px 16px 12px 20px; list-style: disc;
-    background: #f9fafb; border-radius: 6px; font-size: 14px;
+    margin: 18px 0 0; padding: 14px 18px 14px 22px;
+    background: var(--bg); border-radius: var(--radius-sm);
+    list-style: disc; font-size: 13px;
+    color: var(--text-soft);
   }}
-  .pflichten li {{ margin: 2px 0; color: var(--text); }}
-  .pflichten strong {{ color: var(--accent); font-weight: 600; }}
+  .pflichten li {{ margin: 3px 0; }}
+  .pflichten strong {{ color: var(--text); font-weight: 600; }}
+  .pflichten .freq {{ color: var(--muted); font-size: 12px; }}
 
-  .empty {{ color: var(--muted); text-align: center; padding: 48px; }}
-  footer {{ max-width: 1000px; margin: 0 auto; padding: 24px 32px 48px;
-            color: var(--muted); font-size: 12px; text-align: center; }}
+  /* Details/Rest-Fold */
+  .rest-fold {{ margin-top: 16px; }}
+  .rest-fold summary {{
+    cursor: pointer; color: var(--text-soft); font-size: 13px;
+    padding: 10px 14px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--border);
+    list-style: none; user-select: none;
+    transition: all 150ms ease;
+  }}
+  .rest-fold summary::-webkit-details-marker {{ display: none; }}
+  .rest-fold summary::before {{
+    content: "▸"; margin-right: 8px; color: var(--muted);
+    display: inline-block; transition: transform 150ms ease;
+  }}
+  .rest-fold[open] summary::before {{ transform: rotate(90deg); }}
+  .rest-fold summary:hover {{ background: var(--surface-2); color: var(--text); }}
+  .rest-fold[open] > .cards {{ margin-top: 10px; }}
 
-  @media (max-width: 640px) {{
+  .empty, .empty-inline {{
+    color: var(--muted); font-size: 14px; padding: 24px 0;
+  }}
+  .empty {{ text-align: center; padding: 64px 0; }}
+
+  footer {{
+    max-width: 1100px; margin: 0 auto; padding: 32px;
+    color: var(--muted); font-size: 12px; text-align: center;
+    border-top: 1px solid var(--border);
+  }}
+  footer a {{ color: var(--text-soft); text-decoration: none; }}
+  footer a:hover {{ color: var(--text); }}
+
+  @media (max-width: 720px) {{
+    header {{ padding: 32px 20px 20px; }}
+    main {{ padding: 20px 20px 48px; }}
+    .filter-bar-wrap {{ margin: 0 -20px 24px; padding: 10px 20px; }}
+    h1 {{ font-size: 24px; }}
     .meta {{ grid-template-columns: 1fr 1fr; }}
-    header, main, footer {{ padding-left: 20px; padding-right: 20px; }}
+    .card {{ padding: 18px; }}
+    .cards-watchlist {{ grid-template-columns: 1fr; }}
+    .summary-card {{ padding: 20px; }}
+    .summary-text {{ font-size: 15px; }}
+    .card-head {{ flex-direction: column; align-items: stretch; }}
+    .card-actions {{ align-self: flex-end; }}
   }}
 </style>
 </head>
@@ -414,47 +655,51 @@ def render_html(con: sqlite3.Connection) -> str:
 <input type="radio" name="filter" id="f-nachweis">
 
 <header>
-  <div class="titelzeile">
-    <h1>Legal Radar</h1>
-    <div class="sub">Stand: {stand} &middot; {n} Vorgang{"e" if n != 1 else ""} im Radar</div>
-  </div>
-  <details class="info">
-    <summary>Was ist das hier?</summary>
-    <div class="info-body">
-      <p><strong>Legal Radar</strong> beobachtet Gesetzgebungsverfahren des Deutschen
-      Bundestages und meldet fruehzeitig, welche neuen Pflichten, Aufwaende oder
-      Marktchancen entstehen koennten.</p>
-      <p>Die Karten unten zeigen jeweils <strong>Titel &amp; Link zum Vorgang</strong>,
-      das aktuelle <strong>Stadium</strong>, das erkannte <strong>Muster</strong>
-      (Compliance, Nachweis, Vermittlung, Datenprodukt), sowie
-      <strong>Anwendungsbeginn</strong>, <strong>Erfuellungsaufwand</strong> und die
-      resultierenden <strong>Pflichten</strong> - falls das Vorblatt der Drucksache
-      diese Angaben enthaelt.</p>
-      <p>Ganz oben findest du <strong>&quot;Neu diese Woche&quot;</strong>: alles was
-      in den letzten 7 Tagen neu ins Radar kam oder wo sich der Status geaendert hat.</p>
-      <p>Mit den <strong>Filter-Buttons</strong> kannst du die Ansicht auf ein
-      bestimmtes Verfahrensstadium oder Muster einschraenken. Sortierung innerhalb
-      der Sektionen ist bewusst nicht sichtbar - das System priorisiert intern.</p>
+  <div class="header-inner">
+    <div class="titelzeile">
+      <h1>Legal Radar</h1>
+      <div class="sub">Stand {stand} &nbsp;·&nbsp; {n} Vorgang{"e" if n != 1 else ""}</div>
     </div>
-  </details>
+    <details class="info">
+      <summary>Was ist das hier?</summary>
+      <div class="info-body">
+        <p><strong>Legal Radar</strong> beobachtet Bundestags-Gesetzgebung und
+        meldet fruehzeitig, welche neuen Pflichten, Aufwaende oder Marktchancen
+        entstehen.</p>
+        <p><strong>Neu diese Woche</strong> zeigt die 5 relevantesten
+        Bewegungen. Alles Weitere ist unter "Alle N weiteren" ausklappbar.
+        Klick auf <strong>+ Merken</strong> setzt einen Vorgang auf deine
+        <strong>Watchlist</strong> - dann bekommst du taeglich Updates zu
+        genau diesem Vorgang per Mail.</p>
+        <p>Die <strong>Filter-Buttons</strong> oben schraenken auf ein
+        Verfahrensstadium oder Muster ein. Die interne Sortierung nach Score
+        ist bewusst nicht sichtbar.</p>
+      </div>
+    </details>
+  </div>
 </header>
-<main>
+
+<div class="filter-bar-wrap">
   <div class="filter-bar">
     <label for="f-all">Alle</label>
     <label for="f-aktiv">Im Verfahren</label>
     <label for="f-anwendbar">Anwendbar</label>
     <label for="f-tot">Gestorben</label>
-    <span style="width:12px"></span>
+    <span class="filter-sep"></span>
     <label for="f-compliance">Compliance</label>
     <label for="f-nachweis">Nachweis</label>
   </div>
+</div>
 
-  {neu_sektion}
+<main>
+  {summary}
+  {watchlist}
+  {neu}
   {gruppen}
 </main>
 <footer>
-  Automatisch aktualisiert &middot;
-  <a href="https://github.com/Philip3006/legal-radar" style="color:inherit">Quelle</a>
+  Automatisch aktualisiert &nbsp;·&nbsp;
+  <a href="https://github.com/Philip3006/legal-radar">Quelle</a>
 </footer>
 </body>
 </html>
