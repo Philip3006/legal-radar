@@ -51,17 +51,32 @@ class Dip:
         return self._get(f"drucksache-text/{drucksache_id}", {}).get("text", "")
 
     def text_fuer_vorgang(self, vorgang_id: str) -> str:
-        """Volltext der Hauptdrucksache. Gesetzentwurf wird bevorzugt."""
+        """Volltext der Hauptdrucksache. Gesetzentwurf wird bevorzugt.
+
+        Weg: /vorgangsposition?f.vorgang=X -> fundstelle.id -> /drucksache-text/id.
+        Der Filter f.vorgang.id auf /drucksache wird von der API ignoriert.
+        """
         vid = vorgang_id.removeprefix("dip:")
-        data = self._get("drucksache", {"f.vorgang.id": vid})
+        data = self._get("vorgangsposition", {"f.vorgang": vid})
         docs = data.get("documents", [])
         if not docs:
             return ""
+
+        def fs_typ(d: dict) -> str:
+            return ((d.get("fundstelle") or {}).get("drucksachetyp")) or ""
+
+        def fs_id(d: dict) -> str | None:
+            fs = d.get("fundstelle") or {}
+            return str(fs["id"]) if fs.get("id") else None
+
         for prio in ("Gesetzentwurf", "Regierungsentwurf", "Beschlussempfehlung"):
             for d in docs:
-                if prio in (d.get("drucksachetyp") or ""):
-                    return self.drucksache_text(str(d["id"]))
-        return self.drucksache_text(str(docs[0]["id"]))
+                if prio in fs_typ(d) and fs_id(d):
+                    return self.drucksache_text(fs_id(d))
+        for d in docs:
+            if fs_id(d):
+                return self.drucksache_text(fs_id(d))
+        return ""
 
     def _to_vorgang(self, d: dict) -> Vorgang:
         vid = str(d["id"])
