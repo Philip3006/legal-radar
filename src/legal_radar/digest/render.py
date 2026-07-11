@@ -37,11 +37,7 @@ def _summary(events: list[Event]) -> str:
 
 def render(events: list[Event], kw: str) -> str:
     if not events:
-        return (
-            "LEGAL RADAR\n"
-            f"{kw} - nichts Neues.\n\n"
-            f"Dashboard: {DASHBOARD_URL}\n"
-        )
+        return f"LEGAL RADAR\n{kw} - nichts Neues.\n\nDashboard: {DASHBOARD_URL}\n"
 
     lines = [
         "LEGAL RADAR",

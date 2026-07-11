@@ -54,9 +54,7 @@ def _cache_key(kandidaten: list[dict]) -> str:
     heute = date.today()
     kw = heute.isocalendar()
     ids = sorted(k["id"] for k in kandidaten)
-    h = hashlib.sha256(
-        f"summary:{kw[0]}-{kw[1]}:{','.join(ids)}".encode()
-    ).hexdigest()
+    h = hashlib.sha256(f"summary:{kw[0]}-{kw[1]}:{','.join(ids)}".encode()).hexdigest()
     return f"summary:{h}"
 
 

@@ -265,8 +265,7 @@ def render_dashboard(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        render_html(con, summary_text=summary_text, watched_ids=watched,
-                    radar_repo=s.radar_repo),
+        render_html(con, summary_text=summary_text, watched_ids=watched, radar_repo=s.radar_repo),
         encoding="utf-8",
     )
     typer.echo(f"ok: {out}")

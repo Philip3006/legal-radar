@@ -29,8 +29,9 @@ def liste_watchlist_ids(repo: str, token: str | None) -> list[str]:
         "X-GitHub-Api-Version": "2022-11-28",
     }
     url = f"https://api.github.com/repos/{repo}/issues"
-    data = get_json(url, params={"labels": "watchlist", "state": "open", "per_page": 100},
-                    headers=headers)
+    data = get_json(
+        url, params={"labels": "watchlist", "state": "open", "per_page": 100}, headers=headers
+    )
 
     ids: set[str] = set()
     for issue in data if isinstance(data, list) else []:

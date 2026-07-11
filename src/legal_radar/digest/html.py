@@ -106,8 +106,9 @@ def _watchlist_action(row: sqlite3.Row, watched: set[str], repo: str) -> str:
     )
 
 
-def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row],
-          is_neu: bool, watched: set[str], repo: str) -> str:
+def _card(
+    row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched: set[str], repo: str
+) -> str:
     stadium = row["stadium"] or "bt"
     farbe = STADIUM_FARBE.get(stadium, "#737373")
     stadium_txt = html.escape(STADIUM_LABEL.get(stadium, stadium))
@@ -129,8 +130,11 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row],
         items = "".join(
             f"<li><strong>{html.escape(p['typ'])}</strong>: "
             f"{html.escape(p['gegenstand'])}"
-            f"{' <span class=freq>' + html.escape(p['frequenz']) + '</span>'
-              if p['frequenz'] else ''}"
+            f"{
+                ' <span class=freq>' + html.escape(p['frequenz']) + '</span>'
+                if p['frequenz']
+                else ''
+            }"
             f"</li>"
             for p in pflichten
         )
@@ -139,25 +143,44 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row],
     neu_badge = '<span class="badge badge-neu">Neu</span>' if is_neu else ""
     watch_action = _watchlist_action(row, watched, repo)
 
+    # Kompakte Kern-Info: Aufwand (linke Seite) + Anwendung (rechte Seite)
+    quick_bits = []
+    if row["erf_aufwand_eur"]:
+        quick_bits.append(f'<span class="q-aufwand">{aufwand}</span>')
+    if row["anwendungsbeginn"]:
+        quick_bits.append(f'<span class="q-anwendung">ab {anwendung}</span>')
+    quick_meta = f'<div class="card-quickmeta">{" · ".join(quick_bits)}</div>' if quick_bits else ""
+
     return f"""
-    <article class="card" data-stadium="{stadium}" data-muster="{muster_key}">
-      <div class="card-head">
-        <div class="card-badges">
-          <span class="badge" style="--dot:{farbe}">{stadium_txt}</span>
-          <span class="badge badge-outline">{muster_txt}</span>
-          {neu_badge}
+    <details class="card" data-stadium="{stadium}" data-muster="{muster_key}">
+      <summary class="card-summary">
+        <div class="card-summary-main">
+          <div class="card-badges">
+            <span class="badge" style="--dot:{farbe}">{stadium_txt}</span>
+            <span class="badge badge-outline">{muster_txt}</span>
+            {neu_badge}
+          </div>
+          <h3 class="card-titel">{titel}</h3>
+          {quick_meta}
         </div>
-        <div class="card-actions">{watch_action}</div>
+        <span class="card-chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="card-body">
+        <dl class="meta">
+          <div><dt>Anwendung</dt><dd>{anwendung}</dd></div>
+          <div><dt>Erfuellungsaufwand</dt><dd>{aufwand}</dd></div>
+          <div><dt>Betroffene</dt><dd>{betroffene}</dd></div>
+          <div><dt>Behoerde</dt><dd>{behoerde}</dd></div>
+        </dl>
+        {pflichten_block}
+        <div class="card-footer">
+          <a class="card-link" href="{url}" target="_blank" rel="noopener">
+            Zum Vorgang &rarr;
+          </a>
+          {watch_action}
+        </div>
       </div>
-      <h3 class="card-titel"><a href="{url}" target="_blank" rel="noopener">{titel}</a></h3>
-      <dl class="meta">
-        <div><dt>Anwendung</dt><dd>{anwendung}</dd></div>
-        <div><dt>Erfuellungsaufwand</dt><dd>{aufwand}</dd></div>
-        <div><dt>Betroffene</dt><dd>{betroffene}</dd></div>
-        <div><dt>Behoerde</dt><dd>{behoerde}</dd></div>
-      </dl>
-      {pflichten_block}
-    </article>
+    </details>
     """
 
 
@@ -183,8 +206,9 @@ def _summary_card(summary_text: str | None, counts: dict[str, int], n_total: int
     """
 
 
-def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict,
-                      watched: set[str], repo: str) -> str:
+def _watchlist_sektion(
+    rows: list[sqlite3.Row], pflichten: dict, watched: set[str], repo: str
+) -> str:
     if not watched:
         return ""
     wrows = [r for r in rows if r["id"] in watched]
@@ -193,9 +217,9 @@ def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict,
             '<section class="rubrik watchlist-rubrik">'
             '<h2 class="rubrik-titel">★ Meine Watchlist</h2>'
             '<p class="empty-inline">Deine Watchlist ist gesetzt, aber die Vorgaenge '
-            'sind derzeit nicht im Radar. Vielleicht sind sie gestorben oder aus dem '
-            'Fetch-Fenster gefallen.</p>'
-            '</section>'
+            "sind derzeit nicht im Radar. Vielleicht sind sie gestorben oder aus dem "
+            "Fetch-Fenster gefallen.</p>"
+            "</section>"
         )
     cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched, repo) for r in wrows)
     return f"""
@@ -233,8 +257,13 @@ def _event_counts(events: dict[str, list[dict]], neu_ids: set[str]) -> dict[str,
     return counts
 
 
-def _neu_sektion(rows: list[sqlite3.Row], pflichten: dict,
-                events: dict[str, list[dict]], watched: set[str], repo: str) -> str:
+def _neu_sektion(
+    rows: list[sqlite3.Row],
+    pflichten: dict,
+    events: dict[str, list[dict]],
+    watched: set[str],
+    repo: str,
+) -> str:
     grenzdatum = (date.today() - timedelta(days=7)).isoformat()
     neu_rows = [r for r in rows if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum]
 
@@ -274,8 +303,9 @@ def _neu_sektion(rows: list[sqlite3.Row], pflichten: dict,
     """
 
 
-def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict,
-                      watched: set[str], repo: str) -> str:
+def _gruppen_sektionen(
+    rows: list[sqlite3.Row], pflichten: dict, watched: set[str], repo: str
+) -> str:
     out_parts = []
     for key, label, stadien in GRUPPEN:
         gruppe_rows = [r for r in rows if (r["stadium"] or "bt") in stadien]
@@ -333,8 +363,7 @@ def render_html(
     return _shell(stand, n, summary_html, watchlist_html, neu_html, gruppen_html)
 
 
-def _shell(stand: str, n: int, summary: str, watchlist: str,
-           neu: str, gruppen: str) -> str:
+def _shell(stand: str, n: int, summary: str, watchlist: str, neu: str, gruppen: str) -> str:
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -520,30 +549,81 @@ def _shell(stand: str, n: int, summary: str, watchlist: str,
   }}
   .gruppe-titel .count {{ font-weight: 400; }}
 
-  /* Cards */
-  .cards {{ display: grid; gap: 10px; }}
-  .cards-watchlist {{ grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }}
+  /* Cards - collapsible, kompakt by default */
+  .cards {{ display: grid; gap: 8px; }}
+  .cards-watchlist {{ gap: 8px; }}
   .card {{
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 22px 24px;
+    border-radius: var(--radius);
     transition: border-color 150ms ease, background 150ms ease;
+    overflow: hidden;
   }}
   .card:hover {{
     border-color: var(--border-strong);
     background: var(--surface-2);
   }}
-  .card-head {{
-    display: flex; justify-content: space-between; align-items: flex-start;
-    gap: 12px; margin-bottom: 6px;
+  .card[open] {{
+    border-color: var(--border-strong);
+    background: var(--surface-2);
   }}
-  .card-badges {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-  .card-actions {{ flex-shrink: 0; }}
+
+  .card-summary {{
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; cursor: pointer;
+    list-style: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }}
+  .card-summary::-webkit-details-marker {{ display: none; }}
+  .card-summary::marker {{ display: none; content: ""; }}
+  .card-summary-main {{ flex: 1; min-width: 0; }}
+
+  .card-badges {{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }}
+
   .card-titel {{
-    margin: 6px 0 18px; font-size: 16px; font-weight: 600;
-    letter-spacing: -0.005em; line-height: 1.4;
+    margin: 0; font-size: 15px; font-weight: 600;
+    letter-spacing: -0.005em; line-height: 1.4; color: var(--text);
+    /* Auf Mobile max 2 Zeilen, dann Ellipse */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
   }}
-  .card-titel a {{ color: var(--text); text-decoration: none; }}
-  .card-titel a:hover {{ color: var(--accent); }}
+
+  .card-quickmeta {{
+    margin-top: 6px; font-size: 12px; color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }}
+  .card-quickmeta .q-aufwand {{ color: var(--text-soft); font-weight: 500; }}
+
+  .card-chevron {{
+    flex-shrink: 0; width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); transition: transform 200ms ease;
+  }}
+  .card-chevron::before {{
+    content: ""; display: block; width: 8px; height: 8px;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }}
+  .card[open] .card-chevron {{ color: var(--accent); transform: rotate(180deg); }}
+
+  .card-body {{
+    padding: 4px 18px 18px;
+    border-top: 1px solid var(--border);
+    margin-top: 2px;
+  }}
+
+  .card-footer {{
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; margin-top: 16px; padding-top: 14px;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }}
+  .card-link {{
+    color: var(--accent); text-decoration: none; font-size: 13px;
+    font-weight: 500;
+  }}
+  .card-link:hover {{ text-decoration: underline; }}
 
   .badge {{
     display: inline-flex; align-items: center; gap: 5px;
@@ -579,8 +659,8 @@ def _shell(stand: str, n: int, summary: str, watchlist: str,
                   border: 1px solid rgba(245,158,11,0.25); }}
 
   .meta {{
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;
-    margin: 0; font-size: 13px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    margin: 16px 0 0; font-size: 13px;
     font-variant-numeric: tabular-nums;
   }}
   .meta div {{ display: flex; flex-direction: column; min-width: 0; }}
@@ -591,7 +671,7 @@ def _shell(stand: str, n: int, summary: str, watchlist: str,
   .meta dd {{ margin: 0; font-weight: 500; color: var(--text); }}
 
   .pflichten {{
-    margin: 18px 0 0; padding: 14px 18px 14px 22px;
+    margin: 16px 0 0; padding: 12px 16px 12px 20px;
     background: var(--bg); border-radius: var(--radius-sm);
     list-style: disc; font-size: 13px;
     color: var(--text-soft);
@@ -632,17 +712,21 @@ def _shell(stand: str, n: int, summary: str, watchlist: str,
   footer a:hover {{ color: var(--text); }}
 
   @media (max-width: 720px) {{
-    header {{ padding: 32px 20px 20px; }}
-    main {{ padding: 20px 20px 48px; }}
-    .filter-bar-wrap {{ margin: 0 -20px 24px; padding: 10px 20px; }}
-    h1 {{ font-size: 24px; }}
-    .meta {{ grid-template-columns: 1fr 1fr; }}
-    .card {{ padding: 18px; }}
-    .cards-watchlist {{ grid-template-columns: 1fr; }}
-    .summary-card {{ padding: 20px; }}
+    header {{ padding: 28px 18px 16px; }}
+    main {{ padding: 18px 18px 48px; }}
+    .filter-bar-wrap {{ margin: 0 -18px 20px; padding: 10px 18px; }}
+    h1 {{ font-size: 22px; }}
+    .summary-card {{ padding: 18px 20px; }}
     .summary-text {{ font-size: 15px; }}
-    .card-head {{ flex-direction: column; align-items: stretch; }}
-    .card-actions {{ align-self: flex-end; }}
+    .card-summary {{ padding: 12px 14px; gap: 8px; }}
+    .card-titel {{ font-size: 14px; }}
+    .card-quickmeta {{ font-size: 11px; }}
+    .card-body {{ padding: 4px 14px 14px; }}
+    .meta {{ grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px; }}
+    .card-footer {{ flex-direction: column-reverse; align-items: stretch; gap: 8px; }}
+    .card-footer .card-link {{ text-align: center; padding: 8px;
+                               border: 1px solid var(--border); border-radius: 8px; }}
+    .watch-add, .watch-badge {{ text-align: center; }}
   }}
 </style>
 </head>

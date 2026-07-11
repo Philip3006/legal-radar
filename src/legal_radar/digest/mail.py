@@ -108,16 +108,17 @@ def _body_inner(events: list[Event]) -> str:
             continue
         parts.append(
             f'<div style="font-size:11px;text-transform:uppercase;'
-            f'letter-spacing:0.08em;color:{_MUTED};font-weight:600;'
+            f"letter-spacing:0.08em;color:{_MUTED};font-weight:600;"
             f'margin:24px 0 10px;padding:0 4px;">'
-            f'{html.escape(TITEL[kind])} ({len(group)})</div>'
+            f"{html.escape(TITEL[kind])} ({len(group)})</div>"
         )
         parts.extend(_card(e) for e in group)
     return "\n".join(parts)
 
 
-def _shell(headline: str, subline: str, body_inner: str,
-           accent_color: str, button_label: str) -> str:
+def _shell(
+    headline: str, subline: str, body_inner: str, accent_color: str, button_label: str
+) -> str:
     return f"""<!doctype html>
 <html lang="de">
 <head>
