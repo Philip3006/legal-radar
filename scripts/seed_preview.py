@@ -5,16 +5,14 @@ Nutzen: RADAR_DB=data/preview.db uv run python scripts/seed_preview.py
 
 from __future__ import annotations
 
-import json
-import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from legal_radar.core import db  # noqa: E402
-from legal_radar.core.config import Settings  # noqa: E402
+from legal_radar.core import db
+from legal_radar.core.config import Settings
 
 
 HEUTE = date.today()
