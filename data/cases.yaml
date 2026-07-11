@@ -1,0 +1,10 @@
+# 30 kuratierte Faelle: 10 Treffer, 15 teure Fehlalarme, 5 Grenzfaelle.
+# Die Fehlalarme sind die wertvollen. Von Hand pflegen, nie generieren lassen.
+- name: "Beispiel Fehlalarm"
+  label: fehlalarm
+  log_aufwand: 8.4
+  log_betroffene: 2.3
+  monate_bis_frist: 20
+  hat_sanktion: 1
+  zweiseitig: 0
+  notiz: "280 Mio EUR Aufwand, aber nur 190 Konzerne. Intern geloest. Kein Markt."

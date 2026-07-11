@@ -1,0 +1,10 @@
+# Prefilter: unter diesem Aufwand kein LLM-Call (spart ~95%).
+prefilter_min_aufwand_eur: 10000000
+
+# Absender des Digests. Muss zum SMTP-Account passen.
+digest_absender: absender@example.com
+
+# Empfaenger des wochentlichen Digests. Bis zu 5.
+digest_empfaenger:
+  - empfaenger1@example.com
+  - empfaenger2@example.com
