@@ -11,6 +11,7 @@ from legal_radar.core import db, hashing, smtp
 from legal_radar.core.config import Settings
 from legal_radar.digest.events import events_since
 from legal_radar.digest.html import render_html
+from legal_radar.digest.mail import render_mail
 from legal_radar.digest.render import render
 from legal_radar.extract import llm, rules
 from legal_radar.score import deterministic
@@ -213,13 +214,16 @@ def digest(since: str = "7d", send_mail: bool = True) -> None:
     s = Settings.load()
     con = db.connect(s.db_path)
     tage = int(since.rstrip("d"))
-    text = render(events_since(con, tage), kw=f"letzte {tage} Tage")
+    events = events_since(con, tage)
+    kw = f"letzte {tage} Tage"
+    text = render(events, kw=kw)
     typer.echo(text)
 
     if send_mail and s.smtp_url and s.digest_empfaenger:
         gesendet = smtp.send(
-            subject=f"Legal Radar — letzte {tage} Tage",
+            subject=f"Legal Radar — {kw}",
             body=text,
+            html_body=render_mail(events, kw=kw),
             smtp_url=s.smtp_url,
             recipients=s.digest_empfaenger,
             sender=s.digest_absender,

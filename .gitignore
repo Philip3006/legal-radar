@@ -10,3 +10,4 @@ data/config.yaml
 dist/
 .DS_Store
 data/rejected.jsonl
+docs/preview.html

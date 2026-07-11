@@ -8,6 +8,44 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
+
+STADIUM_LABEL = {
+    "referentenentwurf": "Referentenentwurf",
+    "kabinett": "Kabinett",
+    "bt": "Bundestag",
+    "ausschuss": "Ausschuss",
+    "verkuendet": "Verkuendet",
+    "anwendbar": "Anwendbar",
+    "tot": "Gestorben",
+}
+
+
+def _fmt_eur(v: str | None) -> str:
+    if v is None or v == "":
+        return "-"
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return str(v)
+    if n >= 1_000_000_000:
+        return f"{n / 1_000_000_000:.2f} Mrd EUR"
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f} Mio EUR"
+    return f"{n:,} EUR".replace(",", ".")
+
+
+def _fmt_stadium(v: str | None) -> str:
+    return STADIUM_LABEL.get(v, v or "?")
+
+
+def _fmt_datum(v: str | None) -> str:
+    if not v:
+        return "offen"
+    try:
+        return date.fromisoformat(v).strftime("%d.%m.%Y")
+    except ValueError:
+        return v
 
 
 @dataclass
@@ -20,6 +58,23 @@ class Event:
 
 
 def events_since(con: sqlite3.Connection, tage: int) -> list[Event]:
+    out: list[Event] = []
+
+    # Neu erschienene Vorgaenge (erstgesehen im Zeitfenster)
+    neu_rows = con.execute(
+        """
+        SELECT id, titel, quelle_url
+        FROM vorgang
+        WHERE erstgesehen >= date('now', ?)
+          AND input_hash IS NOT NULL
+        ORDER BY erstgesehen DESC
+        """,
+        (f"-{tage} days",),
+    ).fetchall()
+    for r in neu_rows:
+        out.append(Event("neu", r["id"], r["titel"], "neu im Radar", r["quelle_url"]))
+
+    # Aenderungen bestehender Vorgaenge
     rows = con.execute(
         """
         SELECT h.vorgang_id, h.feld, h.alt, h.neu, v.titel, v.quelle_url
@@ -30,16 +85,17 @@ def events_since(con: sqlite3.Connection, tage: int) -> list[Event]:
         (f"-{tage} days",),
     ).fetchall()
 
-    out: list[Event] = []
     for r in rows:
         feld = r["feld"]
         if feld == "erf_aufwand_eur":
-            kind, detail = "aufwand", f"Erfuellungsaufwand {r['alt']} -> {r['neu']} EUR/Jahr"
+            kind = "aufwand"
+            detail = f"{_fmt_eur(r['alt'])} -> {_fmt_eur(r['neu'])} / Jahr"
         elif feld == "stadium":
             kind = "tot" if r["neu"] == "tot" else "stadium"
-            detail = f"{r['alt']} -> {r['neu']}"
+            detail = f"{_fmt_stadium(r['alt'])} -> {_fmt_stadium(r['neu'])}"
         elif feld == "anwendungsbeginn":
-            kind, detail = "fenster", f"Anwendungsbeginn {r['alt']} -> {r['neu']}"
+            kind = "fenster"
+            detail = f"Anwendungsbeginn: {_fmt_datum(r['alt'])} -> {_fmt_datum(r['neu'])}"
         else:
             continue
         out.append(Event(kind, r["vorgang_id"], r["titel"], detail, r["quelle_url"]))

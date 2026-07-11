@@ -17,8 +17,12 @@ def send(
     smtp_url: str,
     recipients: list[str],
     sender: str = "radar@legal-radar.local",
+    html_body: str | None = None,
 ) -> bool:
-    """Rueckgabe: True wenn versandt, False wenn uebersprungen."""
+    """Rueckgabe: True wenn versandt, False wenn uebersprungen.
+
+    Wenn html_body gesetzt ist: multipart/alternative mit HTML + Text-Fallback.
+    """
     if not smtp_url or not recipients:
         return False
 
@@ -36,6 +40,8 @@ def send(
     msg["From"] = sender
     msg["To"] = ", ".join(recipients)
     msg.set_content(body)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
 
     if u.scheme == "smtps":
         server = smtplib.SMTP_SSL(host, port, timeout=30)

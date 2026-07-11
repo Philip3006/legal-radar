@@ -8,24 +8,60 @@ from __future__ import annotations
 from legal_radar.digest.events import Event
 
 TITEL = {
-    "fenster": "FENSTER BEWEGT SICH",
-    "aufwand": "AUFWAND GEAENDERT",
-    "stadium": "STADIENWECHSEL",
-    "neu": "NEU IM RADAR",
-    "wettbewerb": "WETTBEWERBER AUFGETAUCHT",
-    "tot": "GESTORBEN",
+    "neu": "Neu im Radar",
+    "fenster": "Fenster bewegt sich",
+    "aufwand": "Aufwand geaendert",
+    "stadium": "Stadienwechsel",
+    "wettbewerb": "Wettbewerber aufgetaucht",
+    "tot": "Gestorben",
 }
-ORDER = ["fenster", "aufwand", "stadium", "neu", "wettbewerb", "tot"]
+ORDER = ["neu", "fenster", "aufwand", "stadium", "wettbewerb", "tot"]
+
+DASHBOARD_URL = "https://philip3006.github.io/legal-radar/"
+SEP = "-" * 50
+
+
+def _summary(events: list[Event]) -> str:
+    counts = {k: sum(1 for e in events if e.kind == k) for k in ORDER}
+    teile = []
+    if counts["neu"]:
+        teile.append(f"{counts['neu']} neu")
+    if counts["stadium"] or counts["fenster"]:
+        teile.append(f"{counts['stadium'] + counts['fenster']} Wechsel")
+    if counts["aufwand"]:
+        teile.append(f"{counts['aufwand']} Aufwand-Update")
+    if counts["tot"]:
+        teile.append(f"{counts['tot']} gestorben")
+    return ", ".join(teile) if teile else "nichts Neues"
 
 
 def render(events: list[Event], kw: str) -> str:
-    lines = [f"LEGAL RADAR — {kw}", ""]
+    if not events:
+        return (
+            "LEGAL RADAR\n"
+            f"{kw} - nichts Neues.\n\n"
+            f"Dashboard: {DASHBOARD_URL}\n"
+        )
+
+    lines = [
+        "LEGAL RADAR",
+        f"{kw} - {_summary(events)}",
+        SEP,
+        "",
+    ]
+
     for kind in ORDER:
         group = [e for e in events if e.kind == kind]
         if not group:
             continue
-        lines.append(f"{TITEL[kind]} ({len(group)})")
-        for e in group:
-            lines += [f"  · {e.titel}", f"    {e.detail}", f"    -> {e.url}"]
+        lines.append(f"> {TITEL[kind]} ({len(group)})")
         lines.append("")
-    return "\n".join(lines) if len(lines) > 2 else "LEGAL RADAR — nichts Neues.\n"
+        for e in group:
+            lines.append(f"  {e.titel}")
+            lines.append(f"    {e.detail}")
+            lines.append(f"    {e.url}")
+            lines.append("")
+
+    lines.append(SEP)
+    lines.append(f"Dashboard: {DASHBOARD_URL}")
+    return "\n".join(lines)
