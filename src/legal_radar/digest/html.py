@@ -26,13 +26,13 @@ STADIUM_LABEL = {
 }
 
 STADIUM_FARBE = {
-    "referentenentwurf": "#f59e0b",
-    "kabinett": "#f59e0b",
-    "bt": "#f59e0b",
-    "ausschuss": "#f59e0b",
-    "verkuendet": "#737373",
-    "anwendbar": "#10b981",
-    "tot": "#ef4444",
+    "referentenentwurf": "#a3a3a3",
+    "kabinett": "#a3a3a3",
+    "bt": "#737373",
+    "ausschuss": "#737373",
+    "verkuendet": "#525252",
+    "anwendbar": "#171717",
+    "tot": "#d4d4d4",
 }
 
 GRUPPEN = [
@@ -375,27 +375,33 @@ def _shell(
 <meta charset="utf-8">
 <title>Legal Radar</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light">
 <link rel="preconnect" href="https://rsms.me/">
 <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
 <style>
   :root {{
-    color-scheme: dark;
-    --bg: #0a0a0a;
-    --surface: #141414;
-    --surface-2: #1a1a1a;
-    --text: #f5f5f5;
-    --text-soft: #a3a3a3;
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #f5f5f5;
+    --text: #171717;
+    --text-soft: #525252;
     --muted: #737373;
-    --border: rgba(255,255,255,0.08);
-    --border-strong: rgba(255,255,255,0.14);
-    --accent: #10b981;
-    --accent-soft: rgba(16,185,129,0.12);
-    --neu: #3b82f6;
-    --amber: #f59e0b;
-    --red: #ef4444;
-    --radius: 14px;
-    --radius-sm: 8px;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.14);
+    --accent: #171717;
+    --accent-soft: rgba(23,23,23,0.06);
+    --neu: #171717;
+    --amber: #92400e;
+    --red: #7f1d1d;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }}
+
+  /* Radio-Inputs (Filter-State) unsichtbar am body-top */
+  input[type=radio][name=filter] {{
+    position: absolute; opacity: 0; pointer-events: none;
+    width: 0; height: 0; margin: 0;
   }}
 
   * {{ box-sizing: border-box; }}
@@ -511,13 +517,8 @@ def _shell(
 
   /* Summary-Card */
   .summary-card {{
-    background: var(--surface); border: 1px solid var(--border);
+    background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px 28px; margin-bottom: 24px;
-    position: relative; overflow: hidden;
-  }}
-  .summary-card::before {{
-    content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
-    background: linear-gradient(180deg, var(--accent), var(--neu));
   }}
   .summary-label {{
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -542,8 +543,8 @@ def _shell(
   }}
   .rubrik-titel .count {{ color: var(--muted); font-weight: 400; }}
 
-  .neu-rubrik .rubrik-titel {{ color: var(--neu); }}
-  .watchlist-rubrik .rubrik-titel {{ color: var(--amber); }}
+  .neu-rubrik .rubrik-titel {{ color: var(--text); }}
+  .watchlist-rubrik .rubrik-titel {{ color: var(--text); }}
 
   /* Gruppen */
   .gruppe {{ margin-bottom: 40px; }}
