@@ -59,6 +59,8 @@ jobs:
           SMTP_URL: ${{ secrets.SMTP_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADAR_REPO: ${{ github.repository }}
+          WATCH_ENDPOINT: ${{ secrets.WATCH_ENDPOINT }}
+          WATCH_TOKEN: ${{ secrets.WATCH_TOKEN }}
         run: |
           uv run radar init
           uv run radar fetch --source dip --since 2024-01-01

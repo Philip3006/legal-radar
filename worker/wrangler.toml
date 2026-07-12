@@ -1,0 +1,9 @@
+name = "legal-radar-watch"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Secrets (via `wrangler secret put`):
+#   GITHUB_TOKEN     - Fine-grained PAT für legal-radar mit issues:write
+#   WATCH_TOKEN      - langer geheimer String für ?token= im Query
+#
+# Beide werden im Worker via env.GITHUB_TOKEN / env.WATCH_TOKEN gelesen.

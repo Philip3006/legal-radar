@@ -18,11 +18,11 @@ jobs:
 
       - run: uv sync --frozen
 
-      - name: DB-Cache laden (vom radar.yml befüllt)
-        uses: actions/cache@v4
+      - name: DB-Cache lesen (vom radar.yml befüllt, kein Save)
+        uses: actions/cache/restore@v4
         with:
           path: data/radar.db
-          key: radar-db-watchlist-${{ github.run_id }}
+          key: radar-db-readonly-${{ github.run_id }}
           restore-keys: |
             radar-db-
 

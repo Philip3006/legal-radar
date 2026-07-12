@@ -11,9 +11,9 @@ GitHub Issues (Klick oeffnet Issue-Formular vorbelegt).
 from __future__ import annotations
 
 import html
+import json
 import sqlite3
 from datetime import date, timedelta
-from urllib.parse import quote
 
 STADIUM_LABEL = {
     "referentenentwurf": "Referentenentwurf",
@@ -82,33 +82,21 @@ def _has_table(con: sqlite3.Connection, name: str) -> bool:
     return r is not None
 
 
-def _issue_url(repo: str, vorgang_id: str, titel: str) -> str:
-    """URL zum Anlegen eines Watchlist-Issues auf GitHub, vorbelegt."""
-    body = (
-        f"vorgang_id: {vorgang_id}\n\n"
-        f"(Bitte die erste Zeile nicht aendern - der Watchlist-Cron liest sie.)"
-    )
-    return (
-        f"https://github.com/{repo}/issues/new?"
-        f"labels=watchlist"
-        f"&title={quote('Watchlist: ' + titel[:80])}"
-        f"&body={quote(body)}"
-    )
-
-
-def _watchlist_action(row: sqlite3.Row, watched: set[str], repo: str) -> str:
+def _watchlist_action(row: sqlite3.Row, watched: set[str]) -> str:
     if row["id"] in watched:
         return '<span class="watch-badge" title="Auf deiner Watchlist">★ Auf Watchlist</span>'
-    url = _issue_url(repo, row["id"], row["titel"] or "")
+    # data-Attribute für das JS unten. Klick öffnet KEIN GitHub mehr,
+    # sondern schickt POST an den Watch-Worker.
+    vid = html.escape(row["id"])
+    titel_attr = html.escape((row["titel"] or "").replace('"', "'"), quote=True)
     return (
-        f'<a class="watch-add" href="{html.escape(url)}" '
-        f'target="_blank" rel="noopener" title="Auf Watchlist setzen">+ Merken</a>'
+        f'<button type="button" class="watch-add" '
+        f'data-vorgang="{vid}" data-titel="{titel_attr}" '
+        f'title="Auf Watchlist setzen">+ Merken</button>'
     )
 
 
-def _card(
-    row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched: set[str], repo: str
-) -> str:
+def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched: set[str]) -> str:
     stadium = row["stadium"] or "bt"
     farbe = STADIUM_FARBE.get(stadium, "#737373")
     stadium_txt = html.escape(STADIUM_LABEL.get(stadium, stadium))
@@ -141,7 +129,7 @@ def _card(
         pflichten_block = f'<ul class="pflichten">{items}</ul>'
 
     neu_badge = '<span class="badge badge-neu">Neu</span>' if is_neu else ""
-    watch_action = _watchlist_action(row, watched, repo)
+    watch_action = _watchlist_action(row, watched)
 
     # Kompakte Kern-Info: Aufwand (linke Seite) + Anwendung (rechte Seite)
     quick_bits = []
@@ -206,9 +194,7 @@ def _summary_card(summary_text: str | None, counts: dict[str, int], n_total: int
     """
 
 
-def _watchlist_sektion(
-    rows: list[sqlite3.Row], pflichten: dict, watched: set[str], repo: str
-) -> str:
+def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict, watched: set[str]) -> str:
     if not watched:
         return ""
     wrows = [r for r in rows if r["id"] in watched]
@@ -221,7 +207,7 @@ def _watchlist_sektion(
             "Fetch-Fenster gefallen.</p>"
             "</section>"
         )
-    cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched, repo) for r in wrows)
+    cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched) for r in wrows)
     return f"""
     <section class="rubrik watchlist-rubrik">
       <h2 class="rubrik-titel">★ Meine Watchlist <span class="count">({len(wrows)})</span></h2>
@@ -262,7 +248,6 @@ def _neu_sektion(
     pflichten: dict,
     events: dict[str, list[dict]],
     watched: set[str],
-    repo: str,
 ) -> str:
     grenzdatum = (date.today() - timedelta(days=7)).isoformat()
     neu_rows = [r for r in rows if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum]
@@ -279,12 +264,10 @@ def _neu_sektion(
     top = kombiniert[:TOP_N_NEU]
     rest = kombiniert[TOP_N_NEU:]
 
-    top_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched, repo) for r in top)
+    top_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched) for r in top)
     rest_block = ""
     if rest:
-        rest_cards = "\n".join(
-            _card(r, pflichten.get(r["id"], []), True, watched, repo) for r in rest
-        )
+        rest_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched) for r in rest)
         rest_block = f"""
         <details class="rest-fold">
           <summary>Alle {len(rest)} weiteren aus dieser Woche anzeigen</summary>
@@ -303,17 +286,13 @@ def _neu_sektion(
     """
 
 
-def _gruppen_sektionen(
-    rows: list[sqlite3.Row], pflichten: dict, watched: set[str], repo: str
-) -> str:
+def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict, watched: set[str]) -> str:
     out_parts = []
     for key, label, stadien in GRUPPEN:
         gruppe_rows = [r for r in rows if (r["stadium"] or "bt") in stadien]
         if not gruppe_rows:
             continue
-        cards = "\n".join(
-            _card(r, pflichten.get(r["id"], []), False, watched, repo) for r in gruppe_rows
-        )
+        cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched) for r in gruppe_rows)
         out_parts.append(
             f'<section class="gruppe gruppe-{key}">'
             f'<h2 class="gruppe-titel">{label} '
@@ -329,6 +308,8 @@ def render_html(
     summary_text: str | None = None,
     watched_ids: set[str] | None = None,
     radar_repo: str = "Philip3006/legal-radar",
+    watch_endpoint: str = "",
+    watch_token: str = "",
 ) -> str:
     watched = watched_ids or set()
 
@@ -356,14 +337,36 @@ def render_html(
     n = len(rows)
 
     summary_html = _summary_card(summary_text, counts, n)
-    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched, radar_repo)
-    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched, radar_repo)
-    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched, radar_repo)
+    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched)
+    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched)
+    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched)
 
-    return _shell(stand, n, summary_html, watchlist_html, neu_html, gruppen_html)
+    return _shell(
+        stand,
+        n,
+        summary_html,
+        watchlist_html,
+        neu_html,
+        gruppen_html,
+        watch_endpoint,
+        watch_token,
+        radar_repo,
+    )
 
 
-def _shell(stand: str, n: int, summary: str, watchlist: str, neu: str, gruppen: str) -> str:
+def _shell(
+    stand: str,
+    n: int,
+    summary: str,
+    watchlist: str,
+    neu: str,
+    gruppen: str,
+    watch_endpoint: str,
+    watch_token: str,
+    radar_repo: str,
+) -> str:
+    watch_endpoint_js = json.dumps(watch_endpoint)
+    watch_token_js = json.dumps(watch_token)
     return f"""<!doctype html>
 <html lang="de">
 <head>
@@ -783,8 +786,66 @@ def _shell(stand: str, n: int, summary: str, watchlist: str, neu: str, gruppen: 
 </main>
 <footer>
   Automatisch aktualisiert &nbsp;·&nbsp;
-  <a href="https://github.com/Philip3006/legal-radar">Quelle</a>
+  <a href="https://github.com/{radar_repo}">Quelle</a>
 </footer>
+
+<script>
+(function() {{
+  var WATCH_ENDPOINT = {watch_endpoint_js};
+  var WATCH_TOKEN    = {watch_token_js};
+
+  function fallbackGithubUrl(id, titel) {{
+    var body = 'vorgang_id: ' + id + '\\n\\nBitte die erste Zeile nicht ändern.';
+    return 'https://github.com/{radar_repo}/issues/new'
+         + '?labels=watchlist'
+         + '&title=' + encodeURIComponent('Watchlist: ' + titel.slice(0, 80))
+         + '&body='  + encodeURIComponent(body);
+  }}
+
+  document.addEventListener('click', async function(e) {{
+    var btn = e.target.closest('button.watch-add');
+    if (!btn) return;
+    e.preventDefault();
+
+    var id = btn.getAttribute('data-vorgang');
+    var titel = btn.getAttribute('data-titel');
+
+    // Kein Endpoint konfiguriert -> fallback: GitHub-Issue-Formular öffnen (alter Weg)
+    if (!WATCH_ENDPOINT || !WATCH_TOKEN) {{
+      window.open(fallbackGithubUrl(id, titel), '_blank', 'noopener');
+      return;
+    }}
+
+    btn.disabled = true;
+    var alter = btn.textContent;
+    btn.textContent = '…';
+
+    try {{
+      var res = await fetch(WATCH_ENDPOINT + '?token=' + encodeURIComponent(WATCH_TOKEN), {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{id: id, titel: titel}}),
+      }});
+      var data = await res.json();
+      if (res.ok && data.ok) {{
+        // Nach 1-2s wird das Dashboard eh neu geladen sein - hier optisch bestätigen
+        btn.classList.remove('watch-add');
+        btn.classList.add('watch-badge');
+        btn.textContent = '★ Auf Watchlist';
+        btn.disabled = true;
+      }} else {{
+        btn.disabled = false;
+        btn.textContent = alter;
+        alert('Konnte nicht merken: ' + (data.error || res.status));
+      }}
+    }} catch (err) {{
+      btn.disabled = false;
+      btn.textContent = alter;
+      alert('Netzwerkfehler: ' + err.message);
+    }}
+  }});
+}})();
+</script>
 </body>
 </html>
 """

@@ -265,7 +265,14 @@ def render_dashboard(
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        render_html(con, summary_text=summary_text, watched_ids=watched, radar_repo=s.radar_repo),
+        render_html(
+            con,
+            summary_text=summary_text,
+            watched_ids=watched,
+            radar_repo=s.radar_repo,
+            watch_endpoint=s.watch_endpoint,
+            watch_token=s.watch_token,
+        ),
         encoding="utf-8",
     )
     typer.echo(f"ok: {out}")
@@ -280,6 +287,7 @@ def watchlist_digest(since: str = "1d", send_mail: bool = False) -> None:
     """
     s = Settings.load()
     con = db.connect(s.db_path)
+    db.migrate(con)
     tage = int(since.rstrip("d"))
 
     watched = set(github.liste_watchlist_ids(s.radar_repo, s.github_token))

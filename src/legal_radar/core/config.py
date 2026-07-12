@@ -19,6 +19,8 @@ class Settings(BaseModel):
     digest_absender: str = "radar@legal-radar.local"
     github_token: str = ""
     radar_repo: str = "Philip3006/legal-radar"
+    watch_endpoint: str = ""
+    watch_token: str = ""
 
     @classmethod
     def load(cls) -> Settings:
@@ -36,4 +38,6 @@ class Settings(BaseModel):
             digest_absender=cfg.get("digest_absender", "radar@legal-radar.local"),
             github_token=os.getenv("GITHUB_TOKEN", ""),
             radar_repo=os.getenv("RADAR_REPO", "Philip3006/legal-radar"),
+            watch_endpoint=os.getenv("WATCH_ENDPOINT", ""),
+            watch_token=os.getenv("WATCH_TOKEN", ""),
         )
