@@ -10,10 +10,10 @@ from legal_radar.digest.events import Event
 TITEL = {
     "neu": "Neu im Radar",
     "fenster": "Fenster bewegt sich",
-    "aufwand": "Aufwand geaendert",
+    "aufwand": "Aufwand geändert",
     "stadium": "Stadienwechsel",
     "wettbewerb": "Wettbewerber aufgetaucht",
-    "tot": "Gestorben",
+    "tot": "Eingestellt",
 }
 ORDER = ["neu", "fenster", "aufwand", "stadium", "wettbewerb", "tot"]
 
@@ -31,13 +31,13 @@ def _summary(events: list[Event]) -> str:
     if counts["aufwand"]:
         teile.append(f"{counts['aufwand']} Aufwand-Update")
     if counts["tot"]:
-        teile.append(f"{counts['tot']} gestorben")
-    return ", ".join(teile) if teile else "nichts Neues"
+        teile.append(f"{counts['tot']} eingestellt")
+    return ", ".join(teile) if teile else "Keine relevanten Änderungen"
 
 
 def render(events: list[Event], kw: str) -> str:
     if not events:
-        return f"LEGAL RADAR\n{kw} - nichts Neues.\n\nDashboard: {DASHBOARD_URL}\n"
+        return f"LEGAL RADAR\n{kw} - keine relevanten Änderungen.\n\nDashboard: {DASHBOARD_URL}\n"
 
     lines = [
         "LEGAL RADAR",

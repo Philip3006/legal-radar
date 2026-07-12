@@ -15,9 +15,9 @@ STADIUM_LABEL = {
     "kabinett": "Kabinett",
     "bt": "Bundestag",
     "ausschuss": "Ausschuss",
-    "verkuendet": "Verkuendet",
+    "verkuendet": "Verkündet",
     "anwendbar": "Anwendbar",
-    "tot": "Gestorben",
+    "tot": "Eingestellt",
 }
 
 

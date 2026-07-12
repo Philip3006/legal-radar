@@ -20,9 +20,9 @@ STADIUM_LABEL = {
     "kabinett": "Kabinett",
     "bt": "Bundestag",
     "ausschuss": "Ausschuss",
-    "verkuendet": "Verkuendet",
+    "verkuendet": "Verkündet",
     "anwendbar": "Anwendbar",
-    "tot": "Gestorben",
+    "tot": "Eingestellt",
 }
 
 STADIUM_FARBE = {
@@ -37,7 +37,7 @@ STADIUM_FARBE = {
 
 GRUPPEN = [
     ("aktiv", "Im Verfahren", ["referentenentwurf", "kabinett", "bt", "ausschuss"]),
-    ("anwendbar", "Anwendbar / Verkuendet", ["anwendbar", "verkuendet"]),
+    ("anwendbar", "Anwendbar / Verkündet", ["anwendbar", "verkuendet"]),
     ("tot", "Gestorben", ["tot"]),
 ]
 
@@ -156,9 +156,9 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched:
       <div class="card-body">
         <dl class="meta">
           <div><dt>Anwendung</dt><dd>{anwendung}</dd></div>
-          <div><dt>Erfuellungsaufwand</dt><dd>{aufwand}</dd></div>
+          <div><dt>Erfüllungsaufwand</dt><dd>{aufwand}</dd></div>
           <div><dt>Betroffene</dt><dd>{betroffene}</dd></div>
-          <div><dt>Behoerde</dt><dd>{behoerde}</dd></div>
+          <div><dt>Behörde</dt><dd>{behoerde}</dd></div>
         </dl>
         {pflichten_block}
         <div class="card-footer">
@@ -183,7 +183,7 @@ def _summary_card(summary_text: str | None, counts: dict[str, int], n_total: int
         ct_bits.append(f"<strong>{wechsel}</strong> Wechsel")
     if counts.get("aufwand"):
         ct_bits.append(f"<strong>{counts['aufwand']}</strong> Aufwand-Update")
-    ct_line = " &middot; ".join(ct_bits) or f"{n_total} Vorgaenge im Radar"
+    ct_line = " &middot; ".join(ct_bits) or f"{n_total} Vorgänge im Radar"
 
     return f"""
     <section class="summary-card">
@@ -202,8 +202,8 @@ def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict, watched: set[st
         return (
             '<section class="rubrik watchlist-rubrik">'
             '<h2 class="rubrik-titel">★ Meine Watchlist</h2>'
-            '<p class="empty-inline">Deine Watchlist ist gesetzt, aber die Vorgaenge '
-            "sind derzeit nicht im Radar. Vielleicht sind sie gestorben oder aus dem "
+            '<p class="empty-inline">Deine Watchlist ist gesetzt, aber die Vorgänge '
+            "sind derzeit nicht im Radar. Möglicherweise wurden sie eingestellt oder sind aus dem "
             "Fetch-Fenster gefallen.</p>"
             "</section>"
         )
@@ -300,7 +300,7 @@ def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict, watched: set[st
             f'<div class="cards">{cards}</div>'
             f"</section>"
         )
-    return "\n".join(out_parts) or '<p class="empty">Noch keine Vorgaenge im Radar.</p>'
+    return "\n".join(out_parts) or '<p class="empty">Noch keine Vorgänge im Radar.</p>'
 
 
 def render_html(
@@ -748,17 +748,17 @@ def _shell(
       <div class="sub">Stand {stand} &nbsp;·&nbsp; {n} Vorgang{"e" if n != 1 else ""}</div>
     </div>
     <details class="info">
-      <summary>Was ist das hier?</summary>
+      <summary>Über Legal Radar</summary>
       <div class="info-body">
         <p><strong>Legal Radar</strong> beobachtet Bundestags-Gesetzgebung und
-        meldet fruehzeitig, welche neuen Pflichten, Aufwaende oder Marktchancen
+        meldet frühzeitig, welche neuen Pflichten, Aufwände oder Marktchancen
         entstehen.</p>
-        <p><strong>Neu diese Woche</strong> zeigt die 5 relevantesten
-        Bewegungen. Alles Weitere ist unter "Alle N weiteren" ausklappbar.
+        <p><strong>Neu diese Woche</strong> zeigt die fünf relevantesten
+        Bewegungen. Alles Weitere ist unter „Alle N weiteren" ausklappbar.
         Klick auf <strong>+ Merken</strong> setzt einen Vorgang auf deine
-        <strong>Watchlist</strong> - dann bekommst du taeglich Updates zu
+        <strong>Watchlist</strong> - dann bekommst du täglich Updates zu
         genau diesem Vorgang per Mail.</p>
-        <p>Die <strong>Filter-Buttons</strong> oben schraenken auf ein
+        <p>Die <strong>Filter-Buttons</strong> oben schränken auf ein
         Verfahrensstadium oder Muster ein. Die interne Sortierung nach Score
         ist bewusst nicht sichtbar.</p>
       </div>
@@ -771,7 +771,7 @@ def _shell(
     <label for="f-all">Alle</label>
     <label for="f-aktiv">Im Verfahren</label>
     <label for="f-anwendbar">Anwendbar</label>
-    <label for="f-tot">Gestorben</label>
+    <label for="f-tot">Eingestellt</label>
     <span class="filter-sep"></span>
     <label for="f-compliance">Compliance</label>
     <label for="f-nachweis">Nachweis</label>

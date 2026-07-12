@@ -16,10 +16,10 @@ DASHBOARD_URL = "https://philip3006.github.io/legal-radar/"
 TITEL = {
     "neu": "Neu im Radar",
     "fenster": "Fenster bewegt sich",
-    "aufwand": "Aufwand geaendert",
+    "aufwand": "Aufwand geändert",
     "stadium": "Stadienwechsel",
     "wettbewerb": "Wettbewerber aufgetaucht",
-    "tot": "Gestorben",
+    "tot": "Eingestellt",
 }
 ORDER = ["neu", "fenster", "aufwand", "stadium", "wettbewerb", "tot"]
 
@@ -90,15 +90,15 @@ def _summary_zeile(events: list[Event]) -> str:
     if counts.get("aufwand"):
         teile.append(f"<strong style='color:{_TEXT}'>{counts['aufwand']}</strong> Aufwand-Update")
     if counts.get("tot"):
-        teile.append(f"<strong style='color:{_TEXT}'>{counts['tot']}</strong> gestorben")
-    return " &middot; ".join(teile) or "nichts Neues"
+        teile.append(f"<strong style='color:{_TEXT}'>{counts['tot']}</strong> eingestellt")
+    return " &middot; ".join(teile) or "Keine relevanten Änderungen"
 
 
 def _body_inner(events: list[Event]) -> str:
     if not events:
         return f"""
         <p style="color:{_MUTED};text-align:center;padding:40px 0;font-size:14px;">
-          Diese Woche keine relevanten Aenderungen im Radar.
+          Diese Woche keine relevanten Änderungen im Radar.
         </p>
         """
     parts = []
