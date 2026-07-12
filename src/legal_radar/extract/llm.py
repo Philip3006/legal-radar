@@ -34,12 +34,17 @@ def parse_strict(raw: str) -> dict | None:
         return None
 
 
+# Kritische Infos (Erfuellungsaufwand, betroffene, Anwendungsbeginn) stehen im
+# Vorblatt = erste ~10k Zeichen. Mehr zu schicken verbrennt nur Tokens.
+MAX_TEXT = 15_000
+
+
 def extract(client, text: str, model: str = "claude-haiku-4-5-20251001") -> dict | None:
     resp = client.messages.create(
         model=model,
         max_tokens=1000,
         temperature=0,
         system=SYSTEM,
-        messages=[{"role": "user", "content": text[:60_000]}],
+        messages=[{"role": "user", "content": text[:MAX_TEXT]}],
     )
     return parse_strict("".join(b.text for b in resp.content if b.type == "text"))
