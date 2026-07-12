@@ -30,7 +30,7 @@ def _row(**over) -> dict:
 
 def test_render_leerer_digest_zeigt_platzhalter():
     out = render([], kw="letzte 7 Tage")
-    assert "nichts Neues" in out
+    assert "keine relevanten Änderungen" in out
 
 
 def test_events_since_erkennt_stadium_wechsel(con):
@@ -50,4 +50,4 @@ def test_html_zeigt_titel_und_link(con):
 
 def test_html_bei_leerer_db_zeigt_platzhalter(con):
     html = render_html(con)
-    assert "Noch keine Vorgaenge" in html
+    assert "Noch keine Vorgänge" in html
