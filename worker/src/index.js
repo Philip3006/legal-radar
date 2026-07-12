@@ -65,6 +65,20 @@ async function ghPost(path, token, body) {
   });
 }
 
+async function ghPatch(path, token, body) {
+  return fetch(`https://api.github.com${path}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "legal-radar-watch",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 async function findeExistierendes(vorgangId, token) {
   // Alle offenen watchlist-Issues holen (bis 100 - wir haben nie mehr)
   const r = await ghGet(
@@ -96,7 +110,7 @@ export default {
       return json(200, { ok: true, service: "legal-radar-watch" }, origin);
     }
 
-    if (request.method !== "POST" || url.pathname !== "/watch") {
+    if (request.method !== "POST" || !["/watch", "/unwatch"].includes(url.pathname)) {
       return json(404, { error: "not found" }, origin);
     }
 
@@ -115,22 +129,39 @@ export default {
     }
 
     const vid = String(payload?.id || "").trim();
-    const titel = String(payload?.titel || "").trim();
-
     if (!vid || !vid.startsWith("dip:")) {
       return json(400, { error: "id fehlt oder ungültig" }, origin);
     }
+
+    // --- UNWATCH: Issue schliessen ---
+    if (url.pathname === "/unwatch") {
+      const existing = await findeExistierendes(vid, env.GITHUB_TOKEN);
+      if (!existing) {
+        return json(200, { ok: true, removed: false, reason: "not on watchlist" }, origin);
+      }
+      const r = await ghPatch(
+        `/repos/${REPO}/issues/${existing}`,
+        env.GITHUB_TOKEN,
+        { state: "closed" },
+      );
+      if (!r.ok) {
+        const errText = await r.text();
+        return json(502, { error: "github close failed", detail: errText.slice(0, 200) }, origin);
+      }
+      return json(200, { ok: true, removed: true, issue: existing }, origin);
+    }
+
+    // --- WATCH: Issue anlegen ---
+    const titel = String(payload?.titel || "").trim();
     if (!titel) {
       return json(400, { error: "titel fehlt" }, origin);
     }
 
-    // Duplikate abfangen
     const existing = await findeExistierendes(vid, env.GITHUB_TOKEN);
     if (existing) {
       return json(200, { ok: true, issue: existing, existed: true }, origin);
     }
 
-    // Issue anlegen
     const issueTitle = `Watchlist: ${titel.slice(0, 80)}`;
     const issueBody =
       `vorgang_id: ${vid}\n\n` +

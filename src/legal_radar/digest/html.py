@@ -83,12 +83,14 @@ def _has_table(con: sqlite3.Connection, name: str) -> bool:
 
 
 def _watchlist_action(row: sqlite3.Row, watched: set[str]) -> str:
-    if row["id"] in watched:
-        return '<span class="watch-badge" title="Auf deiner Watchlist">★ Auf Watchlist</span>'
-    # data-Attribute für das JS unten. Klick öffnet KEIN GitHub mehr,
-    # sondern schickt POST an den Watch-Worker.
     vid = html.escape(row["id"])
     titel_attr = html.escape((row["titel"] or "").replace('"', "'"), quote=True)
+    if row["id"] in watched:
+        return (
+            f'<button type="button" class="watch-remove" '
+            f'data-vorgang="{vid}" '
+            f'title="Klick zum Entfernen">★ Auf Watchlist</button>'
+        )
     return (
         f'<button type="button" class="watch-add" '
         f'data-vorgang="{vid}" data-titel="{titel_attr}" '
@@ -647,9 +649,10 @@ def _shell(
   }}
   .badge-neu::before {{ background: var(--accent); }}
 
-  .watch-add, .watch-badge {{
+  .watch-add, .watch-remove, .watch-badge {{
     font-size: 12px; padding: 4px 10px; border-radius: 6px;
-    font-weight: 500; white-space: nowrap;
+    font-weight: 500; white-space: nowrap; cursor: pointer;
+    font-family: inherit;
   }}
   .watch-add {{
     color: var(--muted); text-decoration: none;
@@ -658,8 +661,15 @@ def _shell(
   }}
   .watch-add:hover {{ color: var(--amber); border-color: var(--amber);
                       background: rgba(245,158,11,0.08); }}
-  .watch-badge {{ color: var(--amber); background: rgba(245,158,11,0.1);
-                  border: 1px solid rgba(245,158,11,0.25); }}
+  .watch-remove, .watch-badge {{
+    color: var(--amber); background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.25);
+    transition: all 150ms ease;
+  }}
+  .watch-remove:hover {{
+    color: var(--red); border-color: var(--red);
+    background: rgba(239,68,68,0.08);
+  }}
 
   .meta {{
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
@@ -802,18 +812,38 @@ def _shell(
          + '&body='  + encodeURIComponent(body);
   }}
 
+  async function callWorker(pfad, body) {{
+    var url = WATCH_ENDPOINT.replace(/\\/watch$/, '') + pfad
+            + '?token=' + encodeURIComponent(WATCH_TOKEN);
+    var res = await fetch(url, {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify(body),
+    }});
+    var data = await res.json();
+    return {{ok: res.ok && data.ok, data: data, status: res.status}};
+  }}
+
   document.addEventListener('click', async function(e) {{
-    var btn = e.target.closest('button.watch-add');
-    if (!btn) return;
+    var addBtn = e.target.closest('button.watch-add');
+    var rmBtn  = e.target.closest('button.watch-remove');
+    if (!addBtn && !rmBtn) return;
     e.preventDefault();
-
+    var btn = addBtn || rmBtn;
     var id = btn.getAttribute('data-vorgang');
-    var titel = btn.getAttribute('data-titel');
 
-    // Kein Endpoint konfiguriert -> fallback: GitHub-Issue-Formular öffnen (alter Weg)
+    // Kein Endpoint konfiguriert -> fallback nur fuer Add (Github-Issue oeffnen)
     if (!WATCH_ENDPOINT || !WATCH_TOKEN) {{
-      window.open(fallbackGithubUrl(id, titel), '_blank', 'noopener');
+      if (addBtn) {{
+        var titel = addBtn.getAttribute('data-titel');
+        window.open(fallbackGithubUrl(id, titel), '_blank', 'noopener');
+      }}
       return;
+    }}
+
+    // Remove: erst confirm
+    if (rmBtn) {{
+      if (!confirm('Diesen Vorgang wirklich von der Watchlist entfernen?')) return;
     }}
 
     btn.disabled = true;
@@ -821,22 +851,31 @@ def _shell(
     btn.textContent = '…';
 
     try {{
-      var res = await fetch(WATCH_ENDPOINT + '?token=' + encodeURIComponent(WATCH_TOKEN), {{
-        method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{id: id, titel: titel}}),
-      }});
-      var data = await res.json();
-      if (res.ok && data.ok) {{
-        // Nach 1-2s wird das Dashboard eh neu geladen sein - hier optisch bestätigen
-        btn.classList.remove('watch-add');
-        btn.classList.add('watch-badge');
-        btn.textContent = '★ Auf Watchlist';
-        btn.disabled = true;
+      var r;
+      if (addBtn) {{
+        var titel = addBtn.getAttribute('data-titel');
+        r = await callWorker('/watch', {{id: id, titel: titel}});
+      }} else {{
+        r = await callWorker('/unwatch', {{id: id}});
+      }}
+      if (r.ok) {{
+        if (addBtn) {{
+          btn.classList.remove('watch-add');
+          btn.classList.add('watch-remove');
+          btn.textContent = '★ Auf Watchlist';
+          btn.title = 'Klick zum Entfernen';
+        }} else {{
+          btn.classList.remove('watch-remove');
+          btn.classList.add('watch-add');
+          btn.textContent = '+ Merken';
+          btn.title = 'Auf Watchlist setzen';
+          btn.removeAttribute('data-titel');
+        }}
+        btn.disabled = false;
       }} else {{
         btn.disabled = false;
         btn.textContent = alter;
-        alert('Konnte nicht merken: ' + (data.error || res.status));
+        alert('Fehler: ' + (r.data.error || r.status));
       }}
     }} catch (err) {{
       btn.disabled = false;
