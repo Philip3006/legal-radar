@@ -38,7 +38,7 @@ STADIUM_FARBE = {
 GRUPPEN = [
     ("aktiv", "Im Verfahren", ["referentenentwurf", "kabinett", "bt", "ausschuss"]),
     ("anwendbar", "Anwendbar / Verkündet", ["anwendbar", "verkuendet"]),
-    ("tot", "Gestorben", ["tot"]),
+    ("tot", "Eingestellt", ["tot"]),
 ]
 
 MUSTER_LABEL = {
