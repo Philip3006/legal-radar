@@ -394,6 +394,8 @@ def _filter_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
         "tot": 0,
         "compliance": 0,
         "nachweis": 0,
+        "datenprodukt": 0,
+        "vermittlung": 0,
     }
     aktiv_stadien = {"referentenentwurf", "kabinett", "bt", "ausschuss"}
     anwendbar_stadien = {"anwendbar", "verkuendet"}
@@ -406,10 +408,8 @@ def _filter_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
         elif st == "tot":
             counts["tot"] += 1
         m = r["muster"] or "keins"
-        if m == "compliance":
-            counts["compliance"] += 1
-        elif m == "nachweis":
-            counts["nachweis"] += 1
+        if m in counts:
+            counts[m] += 1
     return counts
 
 
@@ -609,7 +609,9 @@ def _shell(
   #f-tot:checked ~ * label[for=f-tot],
   #f-mall:checked ~ * label[for=f-mall],
   #f-compliance:checked ~ * label[for=f-compliance],
-  #f-nachweis:checked ~ * label[for=f-nachweis] {{
+  #f-nachweis:checked ~ * label[for=f-nachweis],
+  #f-datenprodukt:checked ~ * label[for=f-datenprodukt],
+  #f-vermittlung:checked ~ * label[for=f-vermittlung] {{
     background: var(--text); color: var(--bg); border-color: var(--text);
   }}
   #f-all:checked ~ * label[for=f-all] .fc,
@@ -618,7 +620,9 @@ def _shell(
   #f-tot:checked ~ * label[for=f-tot] .fc,
   #f-mall:checked ~ * label[for=f-mall] .fc,
   #f-compliance:checked ~ * label[for=f-compliance] .fc,
-  #f-nachweis:checked ~ * label[for=f-nachweis] .fc {{ color: rgba(255,255,255,0.7); }}
+  #f-nachweis:checked ~ * label[for=f-nachweis] .fc,
+  #f-datenprodukt:checked ~ * label[for=f-datenprodukt] .fc,
+  #f-vermittlung:checked ~ * label[for=f-vermittlung] .fc {{ color: rgba(255,255,255,0.7); }}
 
   /* Filter-Logik */
   #f-aktiv:checked ~ main .card {{ display: none; }}
@@ -644,6 +648,10 @@ def _shell(
   #f-compliance:checked ~ main .card[data-muster="compliance"] {{ display: block; }}
   #f-nachweis:checked ~ main .card {{ display: none; }}
   #f-nachweis:checked ~ main .card[data-muster="nachweis"] {{ display: block; }}
+  #f-datenprodukt:checked ~ main .card {{ display: none; }}
+  #f-datenprodukt:checked ~ main .card[data-muster="datenprodukt"] {{ display: block; }}
+  #f-vermittlung:checked ~ main .card {{ display: none; }}
+  #f-vermittlung:checked ~ main .card[data-muster="vermittlung"] {{ display: block; }}
 
   /* Karten via JS-Suche versteckt */
   .card.hidden-search {{ display: none !important; }}
@@ -913,6 +921,8 @@ def _shell(
 <input type="radio" name="ft" id="f-mall" checked>
 <input type="radio" name="ft" id="f-compliance">
 <input type="radio" name="ft" id="f-nachweis">
+<input type="radio" name="ft" id="f-datenprodukt">
+<input type="radio" name="ft" id="f-vermittlung">
 
 <header class="site-header">
   <div class="header-inner">
@@ -945,6 +955,10 @@ def _shell(
       <label for="f-mall">Alle</label>
       <label for="f-compliance">Compliance <span class="fc">({fc["compliance"]})</span></label>
       <label for="f-nachweis">Nachweis <span class="fc">({fc["nachweis"]})</span></label>
+      <label for="f-datenprodukt">Datenprodukt
+        <span class="fc">({fc["datenprodukt"]})</span></label>
+      <label for="f-vermittlung">Vermittlung
+        <span class="fc">({fc["vermittlung"]})</span></label>
     </div>
   </div>
 </div>
