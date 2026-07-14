@@ -145,7 +145,11 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched:
     stadium_txt = html.escape(STADIUM_LABEL.get(stadium, stadium))
     muster_key = row["muster"] or "keins"
     muster_txt = html.escape(MUSTER_LABEL.get(muster_key, "-"))
-    titel = html.escape(row["titel"] or "")
+    titel_raw = html.escape(row["titel"] or "")
+    if muster_key != "keins":
+        titel = f'{titel_raw} <span class="titel-muster">({muster_txt})</span>'
+    else:
+        titel = titel_raw
     titel_such = (row["titel"] or "").lower()
     url = html.escape(row["quelle_url"] or "")
     behoerde = html.escape(row["behoerde"] or "")
@@ -624,37 +628,14 @@ def _shell(
   #f-datenprodukt:checked ~ * label[for=f-datenprodukt] .fc,
   #f-vermittlung:checked ~ * label[for=f-vermittlung] .fc {{ color: rgba(255,255,255,0.7); }}
 
-  /* Filter-Logik */
-  #f-aktiv:checked ~ main .card {{ display: none; }}
-  #f-aktiv:checked ~ main .card[data-stadium="referentenentwurf"],
-  #f-aktiv:checked ~ main .card[data-stadium="kabinett"],
-  #f-aktiv:checked ~ main .card[data-stadium="bt"],
-  #f-aktiv:checked ~ main .card[data-stadium="ausschuss"] {{ display: block; }}
-  #f-aktiv:checked ~ main .gruppe-anwendbar,
-  #f-aktiv:checked ~ main .gruppe-tot {{ display: none; }}
+  /* Filter/Suche via JS: kombiniert Status x Typ x Suche */
+  .card.hidden-filter {{ display: none !important; }}
+  .rubrik.hidden-filter {{ display: none !important; }}
 
-  #f-anwendbar:checked ~ main .card {{ display: none; }}
-  #f-anwendbar:checked ~ main .card[data-stadium="anwendbar"],
-  #f-anwendbar:checked ~ main .card[data-stadium="verkuendet"] {{ display: block; }}
-  #f-anwendbar:checked ~ main .gruppe-aktiv,
-  #f-anwendbar:checked ~ main .gruppe-tot {{ display: none; }}
-
-  #f-tot:checked ~ main .card {{ display: none; }}
-  #f-tot:checked ~ main .card[data-stadium="tot"] {{ display: block; }}
-  #f-tot:checked ~ main .gruppe-aktiv,
-  #f-tot:checked ~ main .gruppe-anwendbar {{ display: none; }}
-
-  #f-compliance:checked ~ main .card {{ display: none; }}
-  #f-compliance:checked ~ main .card[data-muster="compliance"] {{ display: block; }}
-  #f-nachweis:checked ~ main .card {{ display: none; }}
-  #f-nachweis:checked ~ main .card[data-muster="nachweis"] {{ display: block; }}
-  #f-datenprodukt:checked ~ main .card {{ display: none; }}
-  #f-datenprodukt:checked ~ main .card[data-muster="datenprodukt"] {{ display: block; }}
-  #f-vermittlung:checked ~ main .card {{ display: none; }}
-  #f-vermittlung:checked ~ main .card[data-muster="vermittlung"] {{ display: block; }}
-
-  /* Karten via JS-Suche versteckt */
-  .card.hidden-search {{ display: none !important; }}
+  .titel-muster {{
+    color: var(--muted); font-weight: 500; font-size: 13.5px;
+    margin-left: 4px; letter-spacing: 0;
+  }}
 
   /* Summary */
   .summary-card {{
@@ -1068,25 +1049,52 @@ def _shell(
     }}
   }});
 
-  // --- Suche ---
+  // --- Filter/Suche kombiniert ---
   var suche = document.getElementById('suche');
   var suchTimer = null;
-  function applySearch(q) {{
-    q = (q || '').trim().toLowerCase();
-    var cards = document.querySelectorAll('.card');
-    cards.forEach(function(c) {{
-      if (!q) {{ c.classList.remove('hidden-search'); return; }}
-      var t = c.getAttribute('data-titel') || '';
-      if (t.indexOf(q) >= 0) c.classList.remove('hidden-search');
-      else c.classList.add('hidden-search');
+
+  var STATUS_STADIEN = {{
+    aktiv: ['referentenentwurf', 'kabinett', 'bt', 'ausschuss'],
+    anwendbar: ['anwendbar', 'verkuendet'],
+    tot: ['tot'],
+  }};
+
+  function selected(name) {{
+    var el = document.querySelector('input[name=' + name + ']:checked');
+    return el ? el.id.replace(/^f-/, '') : '';
+  }}
+
+  function applyFilters() {{
+    var status = selected('fs');   // all|aktiv|anwendbar|tot
+    var muster = selected('ft');   // mall|compliance|nachweis|datenprodukt|vermittlung
+    var q = (suche && suche.value || '').trim().toLowerCase();
+    var stadien = STATUS_STADIEN[status] || null;
+
+    document.querySelectorAll('.card').forEach(function(c) {{
+      var hide = false;
+      if (stadien && stadien.indexOf(c.getAttribute('data-stadium')) < 0) hide = true;
+      if (!hide && muster !== 'mall' && c.getAttribute('data-muster') !== muster) hide = true;
+      if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
+      c.classList.toggle('hidden-filter', hide);
+    }});
+
+    // Rubriken ohne sichtbare Karten ausblenden
+    document.querySelectorAll('main .rubrik').forEach(function(r) {{
+      var any = r.querySelector('.card:not(.hidden-filter)');
+      r.classList.toggle('hidden-filter', !any);
     }});
   }}
+
+  document.querySelectorAll('input[name=fs], input[name=ft]').forEach(function(el) {{
+    el.addEventListener('change', applyFilters);
+  }});
   if (suche) {{
-    suche.addEventListener('input', function(e) {{
+    suche.addEventListener('input', function() {{
       if (suchTimer) clearTimeout(suchTimer);
-      suchTimer = setTimeout(function() {{ applySearch(e.target.value); }}, 120);
+      suchTimer = setTimeout(applyFilters, 120);
     }});
   }}
+  applyFilters();
 
   // --- Keyboard ---
   document.addEventListener('keydown', function(e) {{
@@ -1094,7 +1102,7 @@ def _shell(
     if (tag === 'input' || tag === 'textarea') {{
       if (e.key === 'Escape' && e.target === suche) {{
         suche.value = '';
-        applySearch('');
+        applyFilters();
         suche.blur();
       }}
       return;
@@ -1107,7 +1115,8 @@ def _shell(
       var mallRadio = document.getElementById('f-mall');
       if (allRadio) allRadio.checked = true;
       if (mallRadio) mallRadio.checked = true;
-      if (suche) {{ suche.value = ''; applySearch(''); }}
+      if (suche) suche.value = '';
+      applyFilters();
     }}
   }});
 }})();
