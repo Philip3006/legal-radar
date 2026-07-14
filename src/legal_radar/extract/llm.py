@@ -7,10 +7,19 @@ Erlaubt: Muster-Zuordnung, Pflichten strukturieren, kurze Begruendung.
 from __future__ import annotations
 
 import json
+import logging
+
+MUSTER_ERLAUBT = {"compliance", "nachweis", "vermittlung", "datenprodukt", "keins"}
+
+log = logging.getLogger(__name__)
 
 SYSTEM = """Du extrahierst Fakten aus deutschen Gesetzestexten. Du erfindest nichts.
 
-Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown, ohne Vorrede:
+Antworte AUSSCHLIESSLICH mit JSON, ohne Markdown, ohne Vorrede.
+Fuer "muster" sind AUSSCHLIESSLICH diese fuenf Werte erlaubt und
+kein anderer: compliance, nachweis, vermittlung, datenprodukt, keins.
+Passt nichts eindeutig: "keins".
+
 {"muster": "compliance|nachweis|vermittlung|datenprodukt|keins",
  "pflichten": [{"typ":"Nachweis|Meldung|Zertifizierung|Register|Beschaffung",
                 "gegenstand":"...","frequenz":"einmalig|jaehrlich|laufend"}],
@@ -47,4 +56,10 @@ def extract(client, text: str, model: str = "claude-haiku-4-5-20251001") -> dict
         system=SYSTEM,
         messages=[{"role": "user", "content": text[:MAX_TEXT]}],
     )
-    return parse_strict("".join(b.text for b in resp.content if b.type == "text"))
+    data = parse_strict("".join(b.text for b in resp.content if b.type == "text"))
+    if data is not None:
+        m = data.get("muster")
+        if m not in MUSTER_ERLAUBT:
+            log.warning("unbekanntes muster '%s' -> 'keins'", m)
+            data["muster"] = "keins"
+    return data

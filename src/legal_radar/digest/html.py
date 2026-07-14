@@ -217,10 +217,14 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched:
 
     watch_action = _watchlist_action(row, watched)
     such_attr = html.escape(titel_such, quote=True)
+    kosten_val = int(row["erf_aufwand_eur"] or 0)
+    erst_val = html.escape(row["erstgesehen"] or "")
+    anw_val = html.escape(row["anwendungsbeginn"] or "")
 
     return f"""
     <details class="card" data-stadium="{stadium}" data-muster="{muster_key}"
-             data-titel="{such_attr}">
+             data-titel="{such_attr}" data-kosten="{kosten_val}"
+             data-erstgesehen="{erst_val}" data-anwendungsbeginn="{anw_val}">
       <summary class="card-summary">
         <div class="card-summary-main">
           <div class="card-titel-zeile">
@@ -400,6 +404,9 @@ def _filter_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
         "nachweis": 0,
         "datenprodukt": 0,
         "vermittlung": 0,
+        "k10": 0,
+        "k100": 0,
+        "k1000": 0,
     }
     aktiv_stadien = {"referentenentwurf", "kabinett", "bt", "ausschuss"}
     anwendbar_stadien = {"anwendbar", "verkuendet"}
@@ -414,6 +421,13 @@ def _filter_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
         m = r["muster"] or "keins"
         if m in counts:
             counts[m] += 1
+        k = int(r["erf_aufwand_eur"] or 0)
+        if k > 10_000_000:
+            counts["k10"] += 1
+        if k > 100_000_000:
+            counts["k100"] += 1
+        if k > 1_000_000_000:
+            counts["k1000"] += 1
     return counts
 
 
@@ -513,7 +527,8 @@ def _shell(
     --radius-sm: 8px;
   }}
 
-  input[type=radio][name=fs], input[type=radio][name=ft] {{
+  input[type=radio][name=fs], input[type=radio][name=ft],
+  input[type=radio][name=fk], input[type=radio][name=fo] {{
     position: absolute; opacity: 0; pointer-events: none;
     width: 0; height: 0; margin: 0;
   }}
@@ -615,7 +630,15 @@ def _shell(
   #f-compliance:checked ~ * label[for=f-compliance],
   #f-nachweis:checked ~ * label[for=f-nachweis],
   #f-datenprodukt:checked ~ * label[for=f-datenprodukt],
-  #f-vermittlung:checked ~ * label[for=f-vermittlung] {{
+  #f-vermittlung:checked ~ * label[for=f-vermittlung],
+  #f-kall:checked ~ * label[for=f-kall],
+  #f-k10:checked ~ * label[for=f-k10],
+  #f-k100:checked ~ * label[for=f-k100],
+  #f-k1000:checked ~ * label[for=f-k1000],
+  #f-oscore:checked ~ * label[for=f-oscore],
+  #f-oneu:checked ~ * label[for=f-oneu],
+  #f-obald:checked ~ * label[for=f-obald],
+  #f-okosten:checked ~ * label[for=f-okosten] {{
     background: var(--text); color: var(--bg); border-color: var(--text);
   }}
   #f-all:checked ~ * label[for=f-all] .fc,
@@ -626,7 +649,24 @@ def _shell(
   #f-compliance:checked ~ * label[for=f-compliance] .fc,
   #f-nachweis:checked ~ * label[for=f-nachweis] .fc,
   #f-datenprodukt:checked ~ * label[for=f-datenprodukt] .fc,
-  #f-vermittlung:checked ~ * label[for=f-vermittlung] .fc {{ color: rgba(255,255,255,0.7); }}
+  #f-vermittlung:checked ~ * label[for=f-vermittlung] .fc,
+  #f-k10:checked ~ * label[for=f-k10] .fc,
+  #f-k100:checked ~ * label[for=f-k100] .fc,
+  #f-k1000:checked ~ * label[for=f-k1000] .fc {{ color: rgba(255,255,255,0.7); }}
+
+  .empty-filter {{
+    text-align: center; padding: 48px 20px;
+    color: var(--muted); font-size: 14px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }}
+  .empty-filter button {{
+    margin-left: 8px; padding: 4px 12px;
+    border: 1px solid var(--border-strong); border-radius: 999px;
+    background: transparent; color: var(--text); cursor: pointer;
+    font-family: inherit; font-size: 13px;
+  }}
+  .empty-filter button:hover {{ background: var(--text); color: var(--bg); }}
 
   /* Filter/Suche via JS: kombiniert Status x Typ x Suche */
   .card.hidden-filter {{ display: none !important; }}
@@ -904,6 +944,14 @@ def _shell(
 <input type="radio" name="ft" id="f-nachweis">
 <input type="radio" name="ft" id="f-datenprodukt">
 <input type="radio" name="ft" id="f-vermittlung">
+<input type="radio" name="fk" id="f-kall" checked>
+<input type="radio" name="fk" id="f-k10">
+<input type="radio" name="fk" id="f-k100">
+<input type="radio" name="fk" id="f-k1000">
+<input type="radio" name="fo" id="f-oscore" checked>
+<input type="radio" name="fo" id="f-oneu">
+<input type="radio" name="fo" id="f-obald">
+<input type="radio" name="fo" id="f-okosten">
 
 <header class="site-header">
   <div class="header-inner">
@@ -941,6 +989,20 @@ def _shell(
       <label for="f-vermittlung">Vermittlung
         <span class="fc">({fc["vermittlung"]})</span></label>
     </div>
+    <div class="filter-row">
+      <span class="filter-label">Kosten</span>
+      <label for="f-kall">Alle</label>
+      <label for="f-k10">&gt; 10 Mio € <span class="fc">({fc["k10"]})</span></label>
+      <label for="f-k100">&gt; 100 Mio € <span class="fc">({fc["k100"]})</span></label>
+      <label for="f-k1000">&gt; 1 Mrd € <span class="fc">({fc["k1000"]})</span></label>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Sortiert</span>
+      <label for="f-oscore">Relevanz</label>
+      <label for="f-oneu">Neueste</label>
+      <label for="f-obald">Bald geltend</label>
+      <label for="f-okosten">Höchste Kosten</label>
+    </div>
   </div>
 </div>
 
@@ -949,6 +1011,10 @@ def _shell(
   {watchlist}
   {neu}
   {gruppen}
+  <p id="empty-filter" class="empty-filter" style="display:none">
+    Keine Treffer für diese Filterkombination.
+    <button type="button" id="reset-filter">Filter zurücksetzen</button>
+  </p>
 </main>
 <footer>
   Automatisch aktualisiert &nbsp;·&nbsp;
@@ -1049,51 +1115,123 @@ def _shell(
     }}
   }});
 
-  // --- Filter/Suche kombiniert ---
+  // --- Filter/Suche/Sortierung kombiniert ---
   var suche = document.getElementById('suche');
   var suchTimer = null;
+  var emptyEl = document.getElementById('empty-filter');
 
   var STATUS_STADIEN = {{
     aktiv: ['referentenentwurf', 'kabinett', 'bt', 'ausschuss'],
     anwendbar: ['anwendbar', 'verkuendet'],
     tot: ['tot'],
   }};
+  var KOSTEN_MIN = {{ kall: 0, k10: 10000000, k100: 100000000, k1000: 1000000000 }};
 
   function selected(name) {{
     var el = document.querySelector('input[name=' + name + ']:checked');
     return el ? el.id.replace(/^f-/, '') : '';
   }}
 
+  function sortValue(card, mode) {{
+    if (mode === 'oneu')    return card.getAttribute('data-erstgesehen') || '';
+    if (mode === 'obald')   {{
+      var v = card.getAttribute('data-anwendungsbeginn');
+      return v || '9999-12-31';  // ohne Datum ans Ende
+    }}
+    if (mode === 'okosten') return parseInt(card.getAttribute('data-kosten') || '0', 10);
+    return null;  // 'oscore' = DOM-Reihenfolge = SQL-Sortierung
+  }}
+
+  function applySort(mode) {{
+    if (mode === 'oscore') return;  // Server-Reihenfolge belassen
+    document.querySelectorAll('main .cards').forEach(function(container) {{
+      var cards = Array.prototype.slice.call(container.querySelectorAll(':scope > .card'));
+      cards.sort(function(a, b) {{
+        var va = sortValue(a, mode), vb = sortValue(b, mode);
+        if (mode === 'okosten') return vb - va;             // hoch -> tief
+        if (mode === 'oneu')    return vb.localeCompare(va); // neu -> alt
+        return va.localeCompare(vb);                         // bald -> spaet
+      }});
+      cards.forEach(function(c) {{ container.appendChild(c); }});
+    }});
+  }}
+
   function applyFilters() {{
-    var status = selected('fs');   // all|aktiv|anwendbar|tot
-    var muster = selected('ft');   // mall|compliance|nachweis|datenprodukt|vermittlung
+    var status = selected('fs');
+    var muster = selected('ft');
+    var kosten = selected('fk');
+    var sort   = selected('fo');
     var q = (suche && suche.value || '').trim().toLowerCase();
     var stadien = STATUS_STADIEN[status] || null;
+    var minK = KOSTEN_MIN[kosten] || 0;
+    var anySichtbar = false;
 
     document.querySelectorAll('.card').forEach(function(c) {{
       var hide = false;
       if (stadien && stadien.indexOf(c.getAttribute('data-stadium')) < 0) hide = true;
       if (!hide && muster !== 'mall' && c.getAttribute('data-muster') !== muster) hide = true;
+      if (!hide && minK > 0) {{
+        var k = parseInt(c.getAttribute('data-kosten') || '0', 10);
+        if (k <= minK) hide = true;
+      }}
       if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
       c.classList.toggle('hidden-filter', hide);
+      if (!hide) anySichtbar = true;
     }});
 
-    // Rubriken ohne sichtbare Karten ausblenden
     document.querySelectorAll('main .rubrik').forEach(function(r) {{
       var any = r.querySelector('.card:not(.hidden-filter)');
       r.classList.toggle('hidden-filter', !any);
     }});
+    if (emptyEl) emptyEl.style.display = anySichtbar ? 'none' : '';
+
+    applySort(sort);
+    syncUrl(status, muster, kosten, sort, q);
   }}
 
-  document.querySelectorAll('input[name=fs], input[name=ft]').forEach(function(el) {{
-    el.addEventListener('change', applyFilters);
-  }});
+  // --- URL-State ---
+  function syncUrl(s, t, k, o, q) {{
+    var p = new URLSearchParams();
+    if (s !== 'all')     p.set('s', s);
+    if (t !== 'mall')    p.set('t', t);
+    if (k !== 'kall')    p.set('k', k);
+    if (o !== 'oscore')  p.set('o', o);
+    if (q)               p.set('q', q);
+    var qs = p.toString();
+    history.replaceState(null, '', qs ? '?' + qs : location.pathname);
+  }}
+  function restoreFromUrl() {{
+    var p = new URLSearchParams(location.search);
+    var map = {{ s: 'fs', t: 'ft', k: 'fk', o: 'fo' }};
+    Object.keys(map).forEach(function(key) {{
+      var v = p.get(key);
+      if (!v) return;
+      var el = document.getElementById('f-' + v);
+      if (el && el.name === map[key]) el.checked = true;
+    }});
+    var q = p.get('q');
+    if (q && suche) suche.value = q;
+  }}
+
+  document.querySelectorAll('input[name=fs], input[name=ft], input[name=fk], input[name=fo]')
+    .forEach(function(el) {{ el.addEventListener('change', applyFilters); }});
   if (suche) {{
     suche.addEventListener('input', function() {{
       if (suchTimer) clearTimeout(suchTimer);
       suchTimer = setTimeout(applyFilters, 120);
     }});
   }}
+  var resetBtn = document.getElementById('reset-filter');
+  if (resetBtn) resetBtn.addEventListener('click', function() {{
+    ['f-all', 'f-mall', 'f-kall', 'f-oscore'].forEach(function(id) {{
+      var el = document.getElementById(id);
+      if (el) el.checked = true;
+    }});
+    if (suche) suche.value = '';
+    applyFilters();
+  }});
+
+  restoreFromUrl();
   applyFilters();
 
   // --- Keyboard ---
@@ -1111,10 +1249,10 @@ def _shell(
       e.preventDefault();
       suche.focus();
     }} else if (e.key === 'Escape') {{
-      var allRadio = document.getElementById('f-all');
-      var mallRadio = document.getElementById('f-mall');
-      if (allRadio) allRadio.checked = true;
-      if (mallRadio) mallRadio.checked = true;
+      ['f-all', 'f-mall', 'f-kall', 'f-oscore'].forEach(function(id) {{
+        var el = document.getElementById(id);
+        if (el) el.checked = true;
+      }});
       if (suche) suche.value = '';
       applyFilters();
     }}
