@@ -12,3 +12,5 @@ dist/
 data/rejected.jsonl
 docs/preview.html
 docs/*_preview.html
+worker/.wrangler/
+worker/node_modules/

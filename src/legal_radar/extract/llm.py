@@ -24,15 +24,23 @@ Passt nichts eindeutig: "keins".
  "pflichten": [{"typ":"Nachweis|Meldung|Zertifizierung|Register|Beschaffung",
                 "gegenstand":"...","frequenz":"einmalig|jaehrlich|laufend"}],
  "anwendungsbeginn": "YYYY-MM-DD oder null",
- "betroffene": "Zahl oder null (Anzahl betroffener Unternehmen)",
- "einmalaufwand_eur": "Zahl oder null (einmaliger Aufwand fuer die Wirtschaft in EUR)",
+ "belege": {
+   "erf_aufwand_eur":   {"wert": <int EUR>, "textspan": "<Woertliches Zitat>"} | null,
+   "einmalaufwand_eur": {"wert": <int EUR>, "textspan": "<Woertliches Zitat>"} | null,
+   "bussgeld_eur":      {"wert": <int EUR>, "textspan": "<Woertliches Zitat>"} | null,
+   "betroffene":        {"wert": <int>,     "textspan": "<Woertliches Zitat>"} | null
+ },
  "verpflichtete": "...",
  "begruendung": "max. 2 Saetze"}
 
-Steht eine Angabe nicht im Text: null. Niemals schaetzen.
+REGELN fuer belege:
+- textspan ist ein WOERTLICHES Zitat aus dem Text (copy-paste), keine Umschreibung.
+- Die Zahl im "wert" muss exakt in "textspan" stehen (mit Einheit Mio./Mrd./Euro).
+- Steht die Angabe nicht im Text: null. NIEMALS schaetzen, NIEMALS runden.
+- Fehlt die Einheit im Zitat, ist die Angabe unbrauchbar -> null.
+
 anwendungsbeginn: nur wenn im Text ein konkretes Datum genannt wird
-  (Formulierungen wie "tritt am ... in Kraft", "ab dem ...", "gilt ab ...").
-Kosten in Euro schaetzt du NIE - die stehen im Vorblatt oder nirgends."""
+  (Formulierungen wie "tritt am ... in Kraft", "ab dem ...", "gilt ab ...")."""
 
 
 def parse_strict(raw: str) -> dict | None:

@@ -14,8 +14,9 @@ from legal_radar.digest.events import Event, events_since
 from legal_radar.digest.html import render_html
 from legal_radar.digest.mail import render_mail, render_watchlist_mail
 from legal_radar.digest.render import render
-from legal_radar.extract import llm, rules
+from legal_radar.extract import llm, rules, verify
 from legal_radar.score import deterministic
+from legal_radar.sources.bgbl_rss import BgblRss
 from legal_radar.sources.dip import Dip
 
 app = typer.Typer(add_completion=False, help="legal-radar")
@@ -63,35 +64,65 @@ def init() -> None:
 def fetch(source: str = "dip", since: str = "2024-01-01", dry_run: bool = False) -> None:
     """Quelle einlesen, Vorgaenge upserten, Historie schreiben."""
     s = Settings.load()
-    _require_env(s, ["dip_api_key", "anthropic_api_key"])
+    _require_env(s, ["anthropic_api_key"])
     con = db.connect(s.db_path)
     db.migrate(con)
 
-    if source != "dip":
-        typer.echo(f"Unbekannte Quelle: {source}. Nur 'dip' implementiert.", err=True)
+    if source == "dip":
+        _require_env(s, ["dip_api_key"])
+        adapter = Dip(s.dip_api_key)
+    elif source == "bgbl":
+        adapter = BgblRss()
+    else:
+        typer.echo(f"Unbekannte Quelle: {source}. Verfuegbar: dip, bgbl.", err=True)
         raise typer.Exit(1)
 
-    adapter = Dip(s.dip_api_key)
     client = anthropic.Anthropic(api_key=s.anthropic_api_key)
 
-    # Pro Run frisch schreiben, sonst waechst die Datei unbegrenzt.
+    # Append-only, sonst ist der Prefilter blind (CLAUDE.md).
+    # Ein Run-Marker macht spaetere Auswertungen pro Run moeglich.
     rejected = Path("data/rejected.jsonl")
     rejected.parent.mkdir(parents=True, exist_ok=True)
-    rejected.write_text("", encoding="utf-8")
+    run_ts = date.today().isoformat()
+    with rejected.open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"event": "run_start", "ts": run_ts, "source": source}) + "\n")
 
     def log_rejected(vid: str, grund: str) -> None:
-        entry = {"id": vid, "grund": grund, "ts": date.today().isoformat()}
+        entry = {"id": vid, "grund": grund, "ts": run_ts}
         with rejected.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
 
     vorgaenge = adapter.fetch(since)
-    typer.echo(f"DIP: {len(vorgaenge)} Vorgaenge geladen")
+    typer.echo(f"{source}: {len(vorgaenge)} Vorgaenge geladen")
 
     n_neu = n_geaendert = n_gefiltert = n_fehler = 0
 
     for v in vorgaenge:
         text = adapter.text_fuer_vorgang(v.id)
         v.rohtext = text
+
+        # Textlose Quellen (BGBl-RSS): Metadaten trotzdem persistieren,
+        # damit Stadienwechsel (bt -> verkuendet) in der History landen.
+        if not text:
+            row = {
+                "id": v.id,
+                "quelle": v.quelle,
+                "titel": v.titel,
+                "stadium": v.stadium,
+                "quelle_url": v.quelle_url,
+                "anwendungsbeginn": v.anwendungsbeginn.isoformat() if v.anwendungsbeginn else None,
+                "muster": "keins",
+                "input_hash": hashing.input_hash(v),
+            }
+            if dry_run:
+                typer.echo(f"  [dry-run] {v.id}: {v.titel[:70]}")
+                continue
+            changes = db.upsert(con, row)
+            if any(c[0] == "__neu__" for c in changes):
+                n_neu += 1
+            elif changes:
+                n_geaendert += 1
+            continue
 
         if not rules.passes_prefilter(text, s.prefilter_min_aufwand_eur):
             n_gefiltert += 1
@@ -121,6 +152,27 @@ def fetch(source: str = "dip", since: str = "2024-01-01", dry_run: bool = False)
 
         v.muster = llm_data.get("muster", "keins")
 
+        # LLM-Belege nur akzeptieren, wenn Zitat im Rohtext steht und Zahl konsistent ist.
+        # Regex bleibt Primaerquelle; LLM fuellt nur, was die Regex nicht gefunden hat.
+        belege = llm_data.get("belege") or {}
+        erf_ll = verify.verify_eur(belege.get("erf_aufwand_eur"), text)
+        buss_ll = verify.verify_eur(belege.get("bussgeld_eur"), text)
+        einm_ll = verify.verify_eur(belege.get("einmalaufwand_eur"), text)
+        betr_ll = verify.verify_int(belege.get("betroffene"), text)
+
+        erf = v.erf_aufwand_eur if v.erf_aufwand_eur is not None else erf_ll
+        buss = v.durchsetzung.bussgeld_eur if v.durchsetzung.bussgeld_eur is not None else buss_ll
+
+        # Verworfene LLM-Vorschlaege loggen, damit der Cross-Check auditierbar ist.
+        for feld, roh, verifiziert in (
+            ("erf_aufwand_eur", belege.get("erf_aufwand_eur"), erf_ll),
+            ("bussgeld_eur", belege.get("bussgeld_eur"), buss_ll),
+            ("einmalaufwand_eur", belege.get("einmalaufwand_eur"), einm_ll),
+            ("betroffene", belege.get("betroffene"), betr_ll),
+        ):
+            if roh and verifiziert is None:
+                log_rejected(v.id, f"llm_verify_fail:{feld}")
+
         row = {
             "id": v.id,
             "quelle": v.quelle,
@@ -128,10 +180,10 @@ def fetch(source: str = "dip", since: str = "2024-01-01", dry_run: bool = False)
             "stadium": v.stadium,
             "quelle_url": v.quelle_url,
             "anwendungsbeginn": _parse_datum(llm_data.get("anwendungsbeginn")),
-            "betroffene": _parse_int(llm_data.get("betroffene")),
-            "einmalaufwand_eur": _parse_int(llm_data.get("einmalaufwand_eur")),
-            "erf_aufwand_eur": v.erf_aufwand_eur,
-            "bussgeld_eur": v.durchsetzung.bussgeld_eur,
+            "betroffene": betr_ll,
+            "einmalaufwand_eur": einm_ll,
+            "erf_aufwand_eur": erf,
+            "bussgeld_eur": buss,
             "behoerde": v.durchsetzung.behoerde,
             "behoerde_neu": 1 if v.durchsetzung.behoerde_neu else 0,
             "zulassung_noetig": 1 if v.zulassung_noetig else 0,
@@ -263,6 +315,10 @@ def render_dashboard(
     if watched:
         typer.echo(f"Watchlist: {len(watched)} Vorgang(e)")
 
+    bewertungen = github.liste_bewertungen(s.radar_repo, s.github_token)
+    if bewertungen:
+        typer.echo(f"Bewertungen: {len(bewertungen)} Vorgang(e)")
+
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
         render_html(
@@ -272,6 +328,7 @@ def render_dashboard(
             radar_repo=s.radar_repo,
             watch_endpoint=s.watch_endpoint,
             watch_token=s.watch_token,
+            bewertungen=bewertungen,
         ),
         encoding="utf-8",
     )

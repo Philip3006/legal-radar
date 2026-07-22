@@ -139,7 +139,37 @@ def _watchlist_action(row: sqlite3.Row, watched: set[str]) -> str:
     )
 
 
-def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched: set[str]) -> str:
+_BEWERTEN_LABEL = {
+    "interessant": "★ Interessant",
+    "beobachten": "◐ Beobachten",
+    "verworfen": "✕ Verworfen",
+}
+
+
+def _bewerten_actions(row: sqlite3.Row, bewertungen: dict[str, str]) -> str:
+    """Drei Radio-Buttons pro Karte. Klick auf aktiven Status hebt ihn auf."""
+    vid = html.escape(row["id"])
+    titel_attr = html.escape((row["titel"] or "").replace('"', "'"), quote=True)
+    aktuell = bewertungen.get(row["id"], "")
+    knoepfe = []
+    for status, label in _BEWERTEN_LABEL.items():
+        aktiv = " aktiv" if status == aktuell else ""
+        knoepfe.append(
+            f'<button type="button" class="bewerten{aktiv}" '
+            f'data-vorgang="{vid}" data-titel="{titel_attr}" '
+            f'data-status="{status}">{label}</button>'
+        )
+    return f'<div class="bewerten-gruppe">{"".join(knoepfe)}</div>'
+
+
+def _card(
+    row: sqlite3.Row,
+    pflichten: list[sqlite3.Row],
+    is_neu: bool,
+    watched: set[str],
+    bewertungen: dict[str, str] | None = None,
+) -> str:
+    bewertungen = bewertungen or {}
     stadium = row["stadium"] or "bt"
     farbe = STADIUM_FARBE.get(stadium, "#737373")
     stadium_txt = html.escape(STADIUM_LABEL.get(stadium, stadium))
@@ -216,6 +246,7 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched:
         )
 
     watch_action = _watchlist_action(row, watched)
+    bewerten_block = _bewerten_actions(row, bewertungen)
     such_attr = html.escape(titel_such, quote=True)
     kosten_val = int(row["erf_aufwand_eur"] or 0)
     erst_val = html.escape(row["erstgesehen"] or "")
@@ -246,6 +277,7 @@ def _card(row: sqlite3.Row, pflichten: list[sqlite3.Row], is_neu: bool, watched:
           </a>
           {watch_action}
         </div>
+        {bewerten_block}
       </div>
     </details>
     """
@@ -283,7 +315,12 @@ def _rubrik_kopf(titel: str, count: int | None, untertitel: str, klasse: str = "
     )
 
 
-def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict, watched: set[str]) -> str:
+def _watchlist_sektion(
+    rows: list[sqlite3.Row],
+    pflichten: dict,
+    watched: set[str],
+    bewertungen: dict[str, str] | None = None,
+) -> str:
     if not watched:
         return ""
     wrows = [r for r in rows if r["id"] in watched]
@@ -298,7 +335,9 @@ def _watchlist_sektion(rows: list[sqlite3.Row], pflichten: dict, watched: set[st
             "aus dem Fetch-Fenster gefallen.</p>"
             "</section>"
         )
-    cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched) for r in wrows)
+    cards = "\n".join(
+        _card(r, pflichten.get(r["id"], []), False, watched, bewertungen) for r in wrows
+    )
     return (
         '<section class="rubrik watchlist-rubrik">'
         + _rubrik_kopf(kopf_titel, len(wrows), kopf_untertitel)
@@ -339,6 +378,7 @@ def _neu_sektion(
     pflichten: dict,
     events: dict[str, list[dict]],
     watched: set[str],
+    bewertungen: dict[str, str] | None = None,
 ) -> str:
     grenzdatum = (date.today() - timedelta(days=7)).isoformat()
     neu_rows = [r for r in rows if r["erstgesehen"] and r["erstgesehen"] >= grenzdatum]
@@ -352,10 +392,14 @@ def _neu_sektion(
     top = kombiniert[:TOP_N_NEU]
     rest = kombiniert[TOP_N_NEU:]
 
-    top_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched) for r in top)
+    top_cards = "\n".join(
+        _card(r, pflichten.get(r["id"], []), True, watched, bewertungen) for r in top
+    )
     rest_block = ""
     if rest:
-        rest_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, watched) for r in rest)
+        rest_cards = "\n".join(
+            _card(r, pflichten.get(r["id"], []), True, watched, bewertungen) for r in rest
+        )
         rest_block = f"""
         <details class="rest-fold">
           <summary>Alle {len(rest)} weiteren aus dieser Woche anzeigen</summary>
@@ -377,13 +421,20 @@ def _neu_sektion(
     )
 
 
-def _gruppen_sektionen(rows: list[sqlite3.Row], pflichten: dict, watched: set[str]) -> str:
+def _gruppen_sektionen(
+    rows: list[sqlite3.Row],
+    pflichten: dict,
+    watched: set[str],
+    bewertungen: dict[str, str] | None = None,
+) -> str:
     out_parts = []
     for key, label, unter, stadien in GRUPPEN:
         gruppe_rows = [r for r in rows if (r["stadium"] or "bt") in stadien]
         if not gruppe_rows:
             continue
-        cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, watched) for r in gruppe_rows)
+        cards = "\n".join(
+            _card(r, pflichten.get(r["id"], []), False, watched, bewertungen) for r in gruppe_rows
+        )
         out_parts.append(
             f'<section class="rubrik gruppe gruppe-{key}">'
             + _rubrik_kopf(label, len(gruppe_rows), unter)
@@ -438,8 +489,10 @@ def render_html(
     radar_repo: str = "Philip3006/legal-radar",
     watch_endpoint: str = "",
     watch_token: str = "",
+    bewertungen: dict[str, str] | None = None,
 ) -> str:
     watched = watched_ids or set()
+    bewertungen = bewertungen or {}
 
     rows = con.execute(
         """
@@ -466,9 +519,9 @@ def render_html(
     fc = _filter_counts(rows)
 
     summary_html = _summary_card(summary_text, counts, n)
-    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched)
-    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched)
-    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched)
+    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched, bewertungen)
+    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched, bewertungen)
+    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched, bewertungen)
 
     return _shell(
         stand,
@@ -829,6 +882,31 @@ def _shell(
     background: rgba(127,29,29,0.06);
   }}
 
+  .bewerten-gruppe {{
+    display: flex; gap: 6px; margin-top: 12px;
+    padding-top: 12px; border-top: 1px dashed var(--border);
+  }}
+  .bewerten {{
+    flex: 1; font-size: 12px; padding: 5px 8px; border-radius: 6px;
+    font-family: inherit; cursor: pointer; text-align: center;
+    color: var(--muted); background: transparent;
+    border: 1px solid var(--border); transition: all 120ms ease;
+    white-space: nowrap;
+  }}
+  .bewerten:hover {{ color: var(--text); border-color: var(--border-strong); }}
+  .bewerten.aktiv {{
+    color: var(--text); font-weight: 600;
+    background: var(--surface-3); border-color: var(--border-strong);
+  }}
+  .bewerten.aktiv[data-status="interessant"] {{
+    color: var(--amber); border-color: var(--amber);
+    background: rgba(146,64,14,0.08);
+  }}
+  .bewerten.aktiv[data-status="verworfen"] {{
+    color: var(--muted); border-color: var(--muted);
+    background: var(--surface-3); text-decoration: line-through;
+  }}
+
   .meta {{
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
     margin: 16px 0 0; font-size: 13px;
@@ -1112,6 +1190,41 @@ def _shell(
       btn.disabled = false;
       btn.textContent = alter;
       toast('Netzwerkfehler: ' + err.message, true);
+    }}
+  }});
+
+  // --- Bewerten-Buttons: interessant / beobachten / verworfen ---
+  document.addEventListener('click', async function(e) {{
+    var btn = e.target.closest('button.bewerten');
+    if (!btn) return;
+    e.preventDefault();
+
+    if (!WATCH_ENDPOINT || !WATCH_TOKEN) {{
+      toast('Bewerten braucht Worker-Konfiguration.', true);
+      return;
+    }}
+
+    var id     = btn.getAttribute('data-vorgang');
+    var titel  = btn.getAttribute('data-titel') || '';
+    var status = btn.getAttribute('data-status');
+    var gruppe = btn.parentElement;
+
+    btn.disabled = true;
+    try {{
+      var r = await callWorker('/bewerten', {{id: id, titel: titel, status: status}});
+      if (r.ok) {{
+        gruppe.querySelectorAll('button.bewerten').forEach(function(b) {{
+          b.classList.remove('aktiv');
+        }});
+        btn.classList.add('aktiv');
+        toast('Bewertung gespeichert: ' + status);
+      }} else {{
+        toast('Fehler: ' + (r.data.error || r.status), true);
+      }}
+    }} catch (err) {{
+      toast('Netzwerkfehler: ' + err.message, true);
+    }} finally {{
+      btn.disabled = false;
     }}
   }});
 

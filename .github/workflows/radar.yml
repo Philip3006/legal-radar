@@ -26,14 +26,14 @@ jobs:
       - run: uv run ruff check .
       - run: uv run pytest -q
 
-      # SQLite-DB zwischen Runs cachen, sonst geht die History verloren.
-      - name: DB-Cache laden
-        uses: actions/cache@v4
-        with:
-          path: data/radar.db
-          key: radar-db-${{ github.run_id }}
-          restore-keys: |
-            radar-db-
+      # DB liegt im Orphan-Branch 'data'. Cache waere fluechtig,
+      # nach 7 Tagen ohne Zugriff geloescht - History darf nicht verloren gehen.
+      - name: DB aus data-Branch laden
+        run: |
+          mkdir -p data
+          git fetch origin data --depth 1 || { echo "Noch kein data-Branch - erster Run."; exit 0; }
+          git show origin/data:radar.db > data/radar.db 2>/dev/null || echo "Keine DB im data-Branch (yet)."
+          git show origin/data:rejected.jsonl > data/rejected.jsonl 2>/dev/null || true
 
       - name: Config aus Secrets bauen
         env:
@@ -78,4 +78,37 @@ jobs:
           else
             git commit -m "chore: dashboard update $(date -u +%F)"
             git push
+          fi
+
+      - name: DB nach data-Branch pushen
+        if: always()
+        run: |
+          test -f data/radar.db || { echo "Keine DB nach Pipeline."; exit 0; }
+          git config user.name "radar-bot"
+          git config user.email "radar-bot@users.noreply.github.com"
+          TMP=$(mktemp -d)
+          cp data/radar.db "$TMP/radar.db"
+          [ -f data/rejected.jsonl ] && cp data/rejected.jsonl "$TMP/rejected.jsonl" || true
+
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch origin data --depth 1
+            git worktree add data-branch origin/data
+            cd data-branch
+            git switch -C data
+          else
+            git worktree add --detach data-branch
+            cd data-branch
+            git checkout --orphan data
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          cp "$TMP/radar.db" ./radar.db
+          [ -f "$TMP/rejected.jsonl" ] && cp "$TMP/rejected.jsonl" ./rejected.jsonl || true
+          printf 'Radar-DB Snapshots. Nicht editieren, wird vom Cron ueberschrieben.\n' > README.md
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Keine DB-Aenderung."
+          else
+            git commit -m "data: radar.db snapshot $(date -u +%F)"
+            git push origin data
           fi

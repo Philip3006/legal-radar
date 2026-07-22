@@ -110,7 +110,10 @@ export default {
       return json(200, { ok: true, service: "legal-radar-watch" }, origin);
     }
 
-    if (request.method !== "POST" || !["/watch", "/unwatch"].includes(url.pathname)) {
+    if (
+      request.method !== "POST" ||
+      !["/watch", "/unwatch", "/bewerten"].includes(url.pathname)
+    ) {
       return json(404, { error: "not found" }, origin);
     }
 
@@ -129,8 +132,13 @@ export default {
     }
 
     const vid = String(payload?.id || "").trim();
-    if (!vid || !vid.startsWith("dip:")) {
+    if (!vid || !(vid.startsWith("dip:") || vid.startsWith("bgbl:"))) {
       return json(400, { error: "id fehlt oder ungültig" }, origin);
+    }
+
+    // --- BEWERTEN: Issue mit Label 'bewertung' anlegen oder aktualisieren ---
+    if (url.pathname === "/bewerten") {
+      return handleBewerten(request, env, origin, payload, vid);
     }
 
     // --- UNWATCH: Issue schliessen ---
@@ -182,3 +190,56 @@ export default {
     return json(201, { ok: true, issue: created.number }, origin);
   },
 };
+
+async function findeBewertung(vorgangId, token) {
+  const r = await ghGet(
+    `/repos/${REPO}/issues?labels=bewertung&state=open&per_page=100`,
+    token,
+  );
+  if (!r.ok) return null;
+  const issues = await r.json();
+  for (const issue of issues) {
+    const m = (issue.body || "").match(/^\s*vorgang_id\s*:\s*(\S+)\s*$/m);
+    if (m && m[1] === vorgangId) return issue;
+  }
+  return null;
+}
+
+async function handleBewerten(request, env, origin, payload, vid) {
+  const status = String(payload?.status || "").trim();
+  const begruendung = String(payload?.begruendung || "").trim();
+  const erlaubt = ["interessant", "beobachten", "verworfen"];
+  if (!erlaubt.includes(status)) {
+    return json(400, { error: "status ungültig", erlaubt }, origin);
+  }
+  const titel = String(payload?.titel || "").trim() || vid;
+
+  const body =
+    `vorgang_id: ${vid}\n` +
+    `status: ${status}\n` +
+    (begruendung ? `begruendung: ${begruendung.slice(0, 500)}\n` : "");
+
+  const existing = await findeBewertung(vid, env.GITHUB_TOKEN);
+  if (existing) {
+    const r = await ghPatch(`/repos/${REPO}/issues/${existing.number}`, env.GITHUB_TOKEN, {
+      body,
+    });
+    if (!r.ok) {
+      const t = await r.text();
+      return json(502, { error: "github patch failed", detail: t.slice(0, 200) }, origin);
+    }
+    return json(200, { ok: true, issue: existing.number, updated: true }, origin);
+  }
+
+  const r = await ghPost(`/repos/${REPO}/issues`, env.GITHUB_TOKEN, {
+    title: `Bewertung [${status}]: ${titel.slice(0, 80)}`,
+    body,
+    labels: ["bewertung"],
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    return json(502, { error: "github failed", detail: t.slice(0, 200) }, origin);
+  }
+  const created = await r.json();
+  return json(201, { ok: true, issue: created.number }, origin);
+}
