@@ -629,6 +629,78 @@ def _shell(
 
   main {{ max-width: 1100px; margin: 0 auto; padding: 24px 32px 80px; }}
 
+  /* Bewertungs-Hero: prominenteste Steuerung, direkt unter Header */
+  .bewertungs-hero {{
+    max-width: 1100px; margin: 0 auto; padding: 20px 32px 8px;
+  }}
+  .hero-inner {{
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+  }}
+  .hero-tile {{
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 4px; padding: 14px 16px; min-height: 88px;
+    border: 1.5px solid var(--border); border-radius: 12px;
+    background: var(--surface); text-align: left; cursor: pointer;
+    font-family: inherit; transition: all 150ms ease;
+  }}
+  .hero-tile:hover {{
+    border-color: var(--border-strong); background: var(--surface-2);
+    transform: translateY(-1px);
+  }}
+  .hero-tile .tile-count {{
+    font-size: 26px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; color: var(--text);
+  }}
+  .hero-tile .tile-label {{
+    font-size: 13px; font-weight: 600; color: var(--text-soft);
+  }}
+  .hero-tile .tile-hint {{
+    font-size: 11px; color: var(--muted); margin-top: auto;
+  }}
+  /* Aktive Kachel: farbig gefuellt je nach Status */
+  .hero-tile.aktiv {{
+    border-width: 1.5px; box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  }}
+  .hero-tile[data-hero="ball"].aktiv {{
+    background: var(--text); border-color: var(--text);
+  }}
+  .hero-tile[data-hero="ball"].aktiv .tile-count,
+  .hero-tile[data-hero="ball"].aktiv .tile-label {{ color: var(--bg); }}
+  .hero-tile[data-hero="ball"].aktiv .tile-hint {{ color: rgba(255,255,255,0.6); }}
+
+  .hero-tile[data-hero="binteressant"].aktiv {{
+    background: var(--amber); border-color: var(--amber);
+  }}
+  .hero-tile[data-hero="binteressant"].aktiv .tile-count,
+  .hero-tile[data-hero="binteressant"].aktiv .tile-label {{ color: #fff; }}
+  .hero-tile[data-hero="binteressant"].aktiv .tile-hint {{ color: rgba(255,255,255,0.75); }}
+  .hero-tile[data-hero="binteressant"] .tile-label {{ color: var(--amber); }}
+
+  .hero-tile[data-hero="bbeobachten"].aktiv {{
+    background: var(--text-soft); border-color: var(--text-soft);
+  }}
+  .hero-tile[data-hero="bbeobachten"].aktiv .tile-count,
+  .hero-tile[data-hero="bbeobachten"].aktiv .tile-label {{ color: var(--bg); }}
+  .hero-tile[data-hero="bbeobachten"].aktiv .tile-hint {{ color: rgba(255,255,255,0.65); }}
+
+  .hero-tile[data-hero="bverworfen"].aktiv {{
+    background: var(--surface-3); border-color: var(--border-strong);
+  }}
+  .hero-tile[data-hero="bverworfen"] .tile-label {{ color: var(--muted); }}
+
+  .hero-tile[data-hero="bunbewertet"].aktiv {{
+    background: rgba(16,185,129,0.1); border-color: var(--neu);
+  }}
+  .hero-tile[data-hero="bunbewertet"] .tile-label {{ color: var(--neu); }}
+
+  @media (max-width: 900px) {{
+    .bewertungs-hero {{ padding: 16px 18px 4px; }}
+    .hero-inner {{ grid-template-columns: repeat(2, 1fr); gap: 8px; }}
+    .hero-tile {{ min-height: 72px; padding: 10px 12px; }}
+    .hero-tile .tile-count {{ font-size: 20px; }}
+    .hero-tile .tile-hint {{ display: none; }}
+  }}
+
   /* Filter + Suche */
   .toolbar {{
     position: sticky; top: 0; z-index: 20;
@@ -660,54 +732,70 @@ def _shell(
   #suche::placeholder {{ color: var(--muted); }}
 
   .filter-row {{
-    display: flex; gap: 4px; flex-wrap: wrap; align-items: center;
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
     font-size: 13px;
   }}
   .filter-label {{
-    color: var(--muted); font-weight: 500; padding-right: 8px;
-    min-width: 62px;
+    color: var(--muted); font-weight: 600; padding-right: 10px;
+    min-width: 68px; text-transform: uppercase; letter-spacing: 0.04em;
+    font-size: 11px;
   }}
+  /* Basis-Chip: dezent */
   .filter-row label {{
-    padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
+    padding: 6px 12px; border: 1px solid transparent; border-radius: 999px;
     background: transparent; cursor: pointer;
-    color: var(--text-soft); font-weight: 500;
+    color: var(--muted); font-weight: 500;
     transition: all 120ms ease;
+    display: inline-flex; align-items: center; gap: 4px;
   }}
   .filter-row label:hover {{
-    background: var(--surface-3); color: var(--text);
+    color: var(--text); background: var(--surface-3);
   }}
-  .filter-row label .fc {{ color: var(--muted); font-variant-numeric: tabular-nums; }}
+  .filter-row label .fc {{
+    font-variant-numeric: tabular-nums; font-size: 11px;
+    opacity: 0.7;
+  }}
+  /* Default-Chip ('Alle'): auch aktiv nur subtil hervorgehoben */
   #f-all:checked ~ * label[for=f-all],
+  #f-mall:checked ~ * label[for=f-mall],
+  #f-kall:checked ~ * label[for=f-kall],
+  #f-oscore:checked ~ * label[for=f-oscore] {{
+    color: var(--text); background: var(--surface-3);
+    border-color: var(--border);
+  }}
+  /* Nicht-Default aktiv: stark markiert mit dunkler Fuellung */
   #f-aktiv:checked ~ * label[for=f-aktiv],
   #f-anwendbar:checked ~ * label[for=f-anwendbar],
   #f-tot:checked ~ * label[for=f-tot],
-  #f-mall:checked ~ * label[for=f-mall],
   #f-compliance:checked ~ * label[for=f-compliance],
   #f-nachweis:checked ~ * label[for=f-nachweis],
   #f-datenprodukt:checked ~ * label[for=f-datenprodukt],
   #f-vermittlung:checked ~ * label[for=f-vermittlung],
-  #f-kall:checked ~ * label[for=f-kall],
   #f-k10:checked ~ * label[for=f-k10],
   #f-k100:checked ~ * label[for=f-k100],
   #f-k1000:checked ~ * label[for=f-k1000],
-  #f-oscore:checked ~ * label[for=f-oscore],
   #f-oneu:checked ~ * label[for=f-oneu],
   #f-obald:checked ~ * label[for=f-obald],
   #f-okosten:checked ~ * label[for=f-okosten] {{
     background: var(--text); color: var(--bg); border-color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+    font-weight: 600;
   }}
-  #f-all:checked ~ * label[for=f-all] .fc,
   #f-aktiv:checked ~ * label[for=f-aktiv] .fc,
   #f-anwendbar:checked ~ * label[for=f-anwendbar] .fc,
   #f-tot:checked ~ * label[for=f-tot] .fc,
-  #f-mall:checked ~ * label[for=f-mall] .fc,
   #f-compliance:checked ~ * label[for=f-compliance] .fc,
   #f-nachweis:checked ~ * label[for=f-nachweis] .fc,
   #f-datenprodukt:checked ~ * label[for=f-datenprodukt] .fc,
   #f-vermittlung:checked ~ * label[for=f-vermittlung] .fc,
   #f-k10:checked ~ * label[for=f-k10] .fc,
   #f-k100:checked ~ * label[for=f-k100] .fc,
-  #f-k1000:checked ~ * label[for=f-k1000] .fc {{ color: rgba(255,255,255,0.7); }}
+  #f-k1000:checked ~ * label[for=f-k1000] .fc {{ color: rgba(255,255,255,0.75); }}
+
+  /* Body-Marker: sichtbarer Hinweis wenn ueberhaupt gefiltert wird */
+  body.filter-aktiv .toolbar {{
+    box-shadow: 0 2px 0 var(--text);
+  }}
 
   .empty-filter {{
     text-align: center; padding: 48px 20px;
@@ -1051,6 +1139,9 @@ def _shell(
 <input type="radio" name="fb" id="f-ball" checked>
 <input type="radio" name="fb" id="f-bbewertet">
 <input type="radio" name="fb" id="f-bunbewertet">
+<input type="radio" name="fb" id="f-binteressant">
+<input type="radio" name="fb" id="f-bbeobachten">
+<input type="radio" name="fb" id="f-bverworfen">
 
 <header class="site-header">
   <div class="header-inner">
@@ -1068,6 +1159,35 @@ def _shell(
     </p>
   </div>
 </header>
+
+<section class="bewertungs-hero" aria-label="Bewertungs-Uebersicht">
+  <div class="hero-inner">
+    <button type="button" class="hero-tile aktiv" data-hero="ball">
+      <span class="tile-count" data-count="all">{n}</span>
+      <span class="tile-label">Alle Vorgaenge</span>
+    </button>
+    <button type="button" class="hero-tile hero-interessant" data-hero="binteressant">
+      <span class="tile-count" data-count="interessant">0</span>
+      <span class="tile-label">★ Interessant</span>
+      <span class="tile-hint">Push-Alerts per Mail</span>
+    </button>
+    <button type="button" class="hero-tile hero-beobachten" data-hero="bbeobachten">
+      <span class="tile-count" data-count="beobachten">0</span>
+      <span class="tile-label">◐ Beobachten</span>
+      <span class="tile-hint">Zurueckgestellt</span>
+    </button>
+    <button type="button" class="hero-tile hero-verworfen" data-hero="bverworfen">
+      <span class="tile-count" data-count="verworfen">0</span>
+      <span class="tile-label">✕ Verworfen</span>
+      <span class="tile-hint">Als irrelevant markiert</span>
+    </button>
+    <button type="button" class="hero-tile hero-unbewertet" data-hero="bunbewertet">
+      <span class="tile-count" data-count="unbewertet">{n}</span>
+      <span class="tile-label">◯ Unbewertet</span>
+      <span class="tile-hint">Noch nicht klassifiziert</span>
+    </button>
+  </div>
+</section>
 
 <div class="toolbar">
   <div class="toolbar-inner">
@@ -1098,12 +1218,6 @@ def _shell(
       <label for="f-k10">&gt; 10 Mio € <span class="fc">({fc["k10"]})</span></label>
       <label for="f-k100">&gt; 100 Mio € <span class="fc">({fc["k100"]})</span></label>
       <label for="f-k1000">&gt; 1 Mrd € <span class="fc">({fc["k1000"]})</span></label>
-    </div>
-    <div class="filter-row">
-      <span class="filter-label">Bewertung</span>
-      <label for="f-ball">Alle</label>
-      <label for="f-bbewertet">Bewertet</label>
-      <label for="f-bunbewertet">Unbewertet</label>
     </div>
     <div class="filter-row">
       <span class="filter-label">Sortiert</span>
@@ -1255,21 +1369,58 @@ def _shell(
     }}
   }});
 
-  // Fortschritt: X von N bewertet (deduped ueber data-vorgang, weil Karten
-  // doppelt gerendert werden).
+  // Fortschritt + Hero-Kachel-Counts. Alle Werte werden aus dem DOM
+  // berechnet und deduped ueber data-vorgang, weil Karten doppelt
+  // gerendert werden (Bewertungs-Sektion + Gruppen-Sektion).
   function updateFortschritt() {{
-    var el = document.getElementById('bewertungs-fortschritt');
-    if (!el) return;
     var alleIds = new Set();
-    var bewertetIds = new Set();
+    var perStatus = {{interessant: new Set(), beobachten: new Set(), verworfen: new Set()}};
     document.querySelectorAll('.card[data-vorgang]').forEach(function(card) {{
       var id = card.getAttribute('data-vorgang');
       alleIds.add(id);
-      if (card.getAttribute('data-bewertung')) bewertetIds.add(id);
+      var s = card.getAttribute('data-bewertung');
+      if (s && perStatus[s]) perStatus[s].add(id);
     }});
-    el.textContent = bewertetIds.size + ' von ' + alleIds.size + ' bewertet';
+    var bewertetN = perStatus.interessant.size + perStatus.beobachten.size
+                  + perStatus.verworfen.size;
+    var el = document.getElementById('bewertungs-fortschritt');
+    if (el) el.textContent = bewertetN + ' von ' + alleIds.size + ' bewertet';
+
+    var counts = {{
+      all: alleIds.size,
+      interessant: perStatus.interessant.size,
+      beobachten: perStatus.beobachten.size,
+      verworfen: perStatus.verworfen.size,
+      unbewertet: alleIds.size - bewertetN,
+    }};
+    Object.keys(counts).forEach(function(k) {{
+      var el = document.querySelector('[data-count="' + k + '"]');
+      if (el) el.textContent = counts[k];
+    }});
   }}
   updateFortschritt();
+
+  // Hero-Kacheln als Bewertungs-Filter
+  document.querySelectorAll('.hero-tile').forEach(function(tile) {{
+    tile.addEventListener('click', function() {{
+      var ziel = tile.getAttribute('data-hero');  // ball|binteressant|...
+      // Toggle: Klick auf aktive Kachel = zurueck zu ball
+      var istAktiv = tile.classList.contains('aktiv');
+      var neuesRadio = istAktiv ? 'f-ball' : 'f-' + ziel;
+      var input = document.getElementById(neuesRadio);
+      if (input) {{
+        input.checked = true;
+        applyFilters();
+      }}
+    }});
+  }});
+
+  function updateHeroAktiv() {{
+    var aktuell = selected('fb');  // ball|bbewertet|bunbewertet|binteressant|...
+    document.querySelectorAll('.hero-tile').forEach(function(tile) {{
+      tile.classList.toggle('aktiv', tile.getAttribute('data-hero') === aktuell);
+    }});
+  }}
 
   // --- Filter/Suche/Sortierung kombiniert ---
   var suche = document.getElementById('suche');
@@ -1332,8 +1483,12 @@ def _shell(
         if (k <= minK) hide = true;
       }}
       if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
-      if (!hide && bew === 'bbewertet' && !c.getAttribute('data-bewertung')) hide = true;
-      if (!hide && bew === 'bunbewertet' && c.getAttribute('data-bewertung')) hide = true;
+      var cBew = c.getAttribute('data-bewertung');
+      if (!hide && bew === 'bbewertet' && !cBew) hide = true;
+      if (!hide && bew === 'bunbewertet' && cBew) hide = true;
+      if (!hide && bew === 'binteressant' && cBew !== 'interessant') hide = true;
+      if (!hide && bew === 'bbeobachten' && cBew !== 'beobachten') hide = true;
+      if (!hide && bew === 'bverworfen' && cBew !== 'verworfen') hide = true;
       c.classList.toggle('hidden-filter', hide);
       if (!hide) anySichtbar = true;
     }});
@@ -1346,6 +1501,14 @@ def _shell(
 
     applySort(sort);
     syncUrl(status, muster, kosten, sort, q, bew);
+    if (typeof updateHeroAktiv === 'function') updateHeroAktiv();
+
+    // Body-Klasse fuer sichtbaren Filter-Aktiv-Zustand (Toolbar-Underline).
+    var istGefiltert = (
+      status !== 'all' || muster !== 'mall' || kosten !== 'kall'
+      || sort !== 'oscore' || bew !== 'ball' || q
+    );
+    document.body.classList.toggle('filter-aktiv', !!istGefiltert);
   }}
 
   // --- URL-State ---
