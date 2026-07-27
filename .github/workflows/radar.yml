@@ -77,10 +77,21 @@ jobs:
           git add docs/index.html
           if git diff --cached --quiet; then
             echo "Kein Dashboard-Update."
-          else
-            git commit -m "chore: dashboard update $(date -u +%F)"
-            git push
+            exit 0
           fi
+          git commit -m "chore: dashboard update $(date -u +%F)"
+          # Race-Fix: bei zwischenzeitlichem Push auf main rebasen und retry.
+          # docs/index.html schreibt nur der Cron, konfliktfrei.
+          for i in 1 2 3; do
+            if git push origin main; then
+              exit 0
+            fi
+            echo "push abgelehnt (Versuch $i), fetch + rebase..."
+            git fetch origin main
+            git rebase origin/main || { git rebase --abort; exit 1; }
+          done
+          echo "3 push-Versuche erfolglos." >&2
+          exit 1
 
       - name: DB nach data-Branch pushen
         if: always()
