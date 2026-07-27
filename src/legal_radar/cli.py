@@ -351,10 +351,6 @@ def render_dashboard(
             # LLM-Fehler soll das Dashboard-Rendering nicht killen
             typer.echo(f"Summary-Fehler ignoriert: {e}", err=True)
 
-    watched = set(github.liste_watchlist_ids(s.radar_repo, s.github_token))
-    if watched:
-        typer.echo(f"Watchlist: {len(watched)} Vorgang(e)")
-
     bewertungen = github.liste_bewertungen(s.radar_repo, s.github_token)
     if bewertungen:
         typer.echo(f"Bewertungen: {len(bewertungen)} Vorgang(e)")
@@ -364,7 +360,6 @@ def render_dashboard(
         render_html(
             con,
             summary_text=summary_text,
-            watched_ids=watched,
             radar_repo=s.radar_repo,
             watch_endpoint=s.watch_endpoint,
             watch_token=s.watch_token,
@@ -377,26 +372,29 @@ def render_dashboard(
 
 @app.command("watchlist-digest")
 def watchlist_digest(since: str = "1d", send_mail: bool = False) -> None:
-    """Taeglicher Watchlist-Digest.
+    """Taeglicher Digest der als 'interessant' bewerteten Vorgaenge.
 
-    Liest die Watchlist von GitHub, prueft Aenderungen der letzten N Tage,
-    schickt Mail nur wenn tatsaechlich Aenderungen vorliegen.
+    'Interessant' im Dashboard = automatische Push-Notification. Es gibt keine
+    separate Watchlist mehr - eine Bewertung ist die Quelle der Wahrheit.
     """
     s = Settings.load()
     con = db.connect(s.db_path)
     db.migrate(con)
     tage = int(since.rstrip("d"))
 
-    watched = set(github.liste_watchlist_ids(s.radar_repo, s.github_token))
+    watched = {
+        r["vorgang_id"]
+        for r in con.execute("SELECT vorgang_id FROM bewertung_user WHERE status = 'interessant'")
+    }
     if not watched:
-        typer.echo("Watchlist ist leer. Keine Mail.")
+        typer.echo("Keine 'interessant'-Bewertungen. Keine Mail.")
         return
 
     alle_events = events_since(con, tage)
     events: list[Event] = [e for e in alle_events if e.vorgang_id in watched]
 
     if not events:
-        typer.echo(f"Keine Aenderungen an {len(watched)} beobachteten Vorgaengen. Keine Mail.")
+        typer.echo(f"Keine Aenderungen an {len(watched)} interessanten Vorgaengen. Keine Mail.")
         return
 
     kw = f"letzte {tage} Tag{'e' if tage != 1 else ''}"

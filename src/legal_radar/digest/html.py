@@ -123,22 +123,6 @@ def _has_table(con: sqlite3.Connection, name: str) -> bool:
     return r is not None
 
 
-def _watchlist_action(row: sqlite3.Row, watched: set[str]) -> str:
-    vid = html.escape(row["id"])
-    titel_attr = html.escape((row["titel"] or "").replace('"', "'"), quote=True)
-    if row["id"] in watched:
-        return (
-            f'<button type="button" class="watch-remove" '
-            f'data-vorgang="{vid}" '
-            f'title="Klick zum Entfernen">★ Auf Watchlist</button>'
-        )
-    return (
-        f'<button type="button" class="watch-add" '
-        f'data-vorgang="{vid}" data-titel="{titel_attr}" '
-        f'title="Auf Watchlist setzen">+ Merken</button>'
-    )
-
-
 _BEWERTEN_LABEL = {
     "interessant": "★ Interessant",
     "beobachten": "◐ Beobachten",
@@ -166,7 +150,6 @@ def _card(
     row: sqlite3.Row,
     pflichten: list[sqlite3.Row],
     is_neu: bool,
-    watched: set[str],
     bewertungen: dict[str, str] | None = None,
 ) -> str:
     bewertungen = bewertungen or {}
@@ -245,7 +228,6 @@ def _card(
             f'<ul class="pflichten">{items}</ul>'
         )
 
-    watch_action = _watchlist_action(row, watched)
     bewerten_block = _bewerten_actions(row, bewertungen)
     such_attr = html.escape(titel_such, quote=True)
     kosten_val = int(row["erf_aufwand_eur"] or 0)
@@ -275,7 +257,6 @@ def _card(
           <a class="card-link" href="{url}" target="_blank" rel="noopener">
             Zum Vorgang &rarr;
           </a>
-          {watch_action}
         </div>
         {bewerten_block}
       </div>
@@ -315,35 +296,46 @@ def _rubrik_kopf(titel: str, count: int | None, untertitel: str, klasse: str = "
     )
 
 
-def _watchlist_sektion(
+_BEWERTUNG_SEKTIONEN = [
+    (
+        "interessant",
+        "★ Interessant",
+        "Automatischer Watchlist-Digest per Mail bei Aenderungen.",
+    ),
+    (
+        "beobachten",
+        "◐ Beobachten",
+        "Zurueckgestellt - noch keine Push-Alerts.",
+    ),
+    (
+        "verworfen",
+        "✕ Verworfen",
+        "Als nicht relevant markiert. Bleiben sichtbar fuer Nachvollziehbarkeit.",
+    ),
+]
+
+
+def _bewertung_sektion(
+    status: str,
+    label: str,
+    untertitel: str,
     rows: list[sqlite3.Row],
     pflichten: dict,
-    watched: set[str],
-    bewertungen: dict[str, str] | None = None,
+    bewertungen: dict[str, str],
 ) -> str:
-    if not watched:
+    """Eine Sektion pro Bewertungs-Kategorie. Leer -> nichts rendern."""
+    matches = [r for r in rows if bewertungen.get(r["id"]) == status]
+    if not matches:
         return ""
-    wrows = [r for r in rows if r["id"] in watched]
-    kopf_titel = "★ Meine Watchlist"
-    kopf_untertitel = "Vorgänge, die Sie zum Beobachten markiert haben."
-    if not wrows:
-        return (
-            '<section class="rubrik watchlist-rubrik">'
-            + _rubrik_kopf(kopf_titel, None, kopf_untertitel)
-            + '<p class="empty-inline">Ihre Watchlist ist gesetzt, aber die Vorgänge '
-            "sind derzeit nicht im Radar. Möglicherweise wurden sie eingestellt oder sind "
-            "aus dem Fetch-Fenster gefallen.</p>"
-            "</section>"
-        )
-    cards = "\n".join(
-        _card(r, pflichten.get(r["id"], []), False, watched, bewertungen) for r in wrows
+    kollabiert = status == "verworfen"  # verworfen ist standardmaessig zu
+    cards = "\n".join(_card(r, pflichten.get(r["id"], []), False, bewertungen) for r in matches)
+    tag_open = (
+        f'<details class="rubrik bewertung-rubrik bewertung-{status}"'
+        + ("" if kollabiert else " open")
+        + ">"
     )
-    return (
-        '<section class="rubrik watchlist-rubrik">'
-        + _rubrik_kopf(kopf_titel, len(wrows), kopf_untertitel)
-        + f'<div class="cards cards-watchlist">{cards}</div>'
-        + "</section>"
-    )
+    kopf = _rubrik_kopf(label, len(matches), untertitel)
+    return f'{tag_open}<summary>{kopf}</summary><div class="cards">{cards}</div></details>'
 
 
 def _events_diese_woche(con: sqlite3.Connection, tage: int = 7) -> dict[str, list[dict]]:
@@ -377,7 +369,6 @@ def _neu_sektion(
     rows: list[sqlite3.Row],
     pflichten: dict,
     events: dict[str, list[dict]],
-    watched: set[str],
     bewertungen: dict[str, str] | None = None,
 ) -> str:
     grenzdatum = (date.today() - timedelta(days=7)).isoformat()
@@ -392,13 +383,11 @@ def _neu_sektion(
     top = kombiniert[:TOP_N_NEU]
     rest = kombiniert[TOP_N_NEU:]
 
-    top_cards = "\n".join(
-        _card(r, pflichten.get(r["id"], []), True, watched, bewertungen) for r in top
-    )
+    top_cards = "\n".join(_card(r, pflichten.get(r["id"], []), True, bewertungen) for r in top)
     rest_block = ""
     if rest:
         rest_cards = "\n".join(
-            _card(r, pflichten.get(r["id"], []), True, watched, bewertungen) for r in rest
+            _card(r, pflichten.get(r["id"], []), True, bewertungen) for r in rest
         )
         rest_block = f"""
         <details class="rest-fold">
@@ -424,7 +413,6 @@ def _neu_sektion(
 def _gruppen_sektionen(
     rows: list[sqlite3.Row],
     pflichten: dict,
-    watched: set[str],
     bewertungen: dict[str, str] | None = None,
 ) -> str:
     out_parts = []
@@ -433,7 +421,7 @@ def _gruppen_sektionen(
         if not gruppe_rows:
             continue
         cards = "\n".join(
-            _card(r, pflichten.get(r["id"], []), False, watched, bewertungen) for r in gruppe_rows
+            _card(r, pflichten.get(r["id"], []), False, bewertungen) for r in gruppe_rows
         )
         out_parts.append(
             f'<section class="rubrik gruppe gruppe-{key}">'
@@ -485,13 +473,11 @@ def _filter_counts(rows: list[sqlite3.Row]) -> dict[str, int]:
 def render_html(
     con: sqlite3.Connection,
     summary_text: str | None = None,
-    watched_ids: set[str] | None = None,
     radar_repo: str = "Philip3006/legal-radar",
     watch_endpoint: str = "",
     watch_token: str = "",
     bewertungen: dict[str, str] | None = None,
 ) -> str:
-    watched = watched_ids or set()
     bewertungen = bewertungen or {}
 
     rows = con.execute(
@@ -519,16 +505,19 @@ def render_html(
     fc = _filter_counts(rows)
 
     summary_html = _summary_card(summary_text, counts, n)
-    watchlist_html = _watchlist_sektion(rows, pflichten_by_vid, watched, bewertungen)
-    neu_html = _neu_sektion(rows, pflichten_by_vid, events, watched, bewertungen)
-    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, watched, bewertungen)
+    bewertung_html = "\n".join(
+        _bewertung_sektion(status, label, untertitel, rows, pflichten_by_vid, bewertungen)
+        for status, label, untertitel in _BEWERTUNG_SEKTIONEN
+    )
+    neu_html = _neu_sektion(rows, pflichten_by_vid, events, bewertungen)
+    gruppen_html = _gruppen_sektionen(rows, pflichten_by_vid, bewertungen)
 
     return _shell(
         stand,
         n,
         fc,
         summary_html,
-        watchlist_html,
+        bewertung_html,
         neu_html,
         gruppen_html,
         watch_endpoint,
@@ -542,7 +531,7 @@ def _shell(
     n: int,
     fc: dict[str, int],
     summary: str,
-    watchlist: str,
+    bewertung: str,
     neu: str,
     gruppen: str,
     watch_endpoint: str,
@@ -764,7 +753,19 @@ def _shell(
     margin: 4px 0 0; font-size: 13.5px; color: var(--text-soft);
     max-width: 68ch;
   }}
-  .watchlist-rubrik .rubrik-titel {{ color: var(--amber); }}
+  .bewertung-rubrik {{ margin-bottom: 20px; }}
+  .bewertung-rubrik > summary {{
+    list-style: none; cursor: pointer;
+    padding: 6px 0;
+  }}
+  .bewertung-rubrik > summary::-webkit-details-marker {{ display: none; }}
+  .bewertung-rubrik > summary::before {{
+    content: "▸"; margin-right: 8px; color: var(--muted);
+    display: inline-block; transition: transform 150ms ease;
+  }}
+  .bewertung-rubrik[open] > summary::before {{ transform: rotate(90deg); }}
+  .bewertung-interessant .rubrik-titel {{ color: var(--amber); }}
+  .bewertung-verworfen .rubrik-titel {{ color: var(--muted); }}
 
   /* Cards */
   .cards {{ display: grid; gap: 10px; }}
@@ -859,28 +860,6 @@ def _shell(
     padding-bottom: 1px;
   }}
   .card-link:hover {{ border-color: var(--text); }}
-
-  .watch-add, .watch-remove {{
-    font-size: 12.5px; padding: 5px 12px; border-radius: 8px;
-    font-weight: 500; white-space: nowrap; cursor: pointer;
-    font-family: inherit;
-  }}
-  .watch-add {{
-    color: var(--muted);
-    border: 1px solid var(--border); background: transparent;
-    transition: all 120ms ease;
-  }}
-  .watch-add:hover {{ color: var(--amber); border-color: var(--amber);
-                      background: rgba(146,64,14,0.05); }}
-  .watch-remove {{
-    color: var(--amber); background: rgba(146,64,14,0.06);
-    border: 1px solid rgba(146,64,14,0.2);
-    transition: all 120ms ease;
-  }}
-  .watch-remove:hover {{
-    color: var(--red); border-color: var(--red);
-    background: rgba(127,29,29,0.06);
-  }}
 
   .bewerten-gruppe {{
     display: flex; gap: 6px; margin-top: 12px;
@@ -998,7 +977,6 @@ def _shell(
     .card-footer .card-link {{ text-align: center; padding: 8px;
                                border: 1px solid var(--border); border-radius: 8px;
                                border-bottom-color: var(--border); }}
-    .watch-add, .watch-remove {{ text-align: center; }}
     #toast {{ left: 16px; right: 16px; bottom: 16px; max-width: none; }}
   }}
 
@@ -1086,7 +1064,7 @@ def _shell(
 
 <main>
   {summary}
-  {watchlist}
+  {bewertung}
   {neu}
   {gruppen}
   <p id="empty-filter" class="empty-filter" style="display:none">
@@ -1105,14 +1083,6 @@ def _shell(
 (function() {{
   var WATCH_ENDPOINT = {watch_endpoint_js};
   var WATCH_TOKEN    = {watch_token_js};
-
-  function fallbackGithubUrl(id, titel) {{
-    var body = 'vorgang_id: ' + id + '\\n\\nBitte die erste Zeile nicht ändern.';
-    return 'https://github.com/{radar_repo}/issues/new'
-         + '?labels=watchlist'
-         + '&title=' + encodeURIComponent('Watchlist: ' + titel.slice(0, 80))
-         + '&body='  + encodeURIComponent(body);
-  }}
 
   var toastEl = document.getElementById('toast');
   var toastTimer = null;
@@ -1137,61 +1107,7 @@ def _shell(
     return {{ok: res.ok && data.ok, data: data, status: res.status}};
   }}
 
-  document.addEventListener('click', async function(e) {{
-    var addBtn = e.target.closest('button.watch-add');
-    var rmBtn  = e.target.closest('button.watch-remove');
-    if (!addBtn && !rmBtn) return;
-    e.preventDefault();
-    var btn = addBtn || rmBtn;
-    var id = btn.getAttribute('data-vorgang');
-
-    if (!WATCH_ENDPOINT || !WATCH_TOKEN) {{
-      if (addBtn) {{
-        var titel = addBtn.getAttribute('data-titel');
-        window.open(fallbackGithubUrl(id, titel), '_blank', 'noopener');
-      }}
-      return;
-    }}
-
-    btn.disabled = true;
-    var alter = btn.textContent;
-    btn.textContent = '…';
-
-    try {{
-      var r;
-      if (addBtn) {{
-        var titel = addBtn.getAttribute('data-titel');
-        r = await callWorker('/watch', {{id: id, titel: titel}});
-      }} else {{
-        r = await callWorker('/unwatch', {{id: id}});
-      }}
-      if (r.ok) {{
-        if (addBtn) {{
-          btn.classList.remove('watch-add');
-          btn.classList.add('watch-remove');
-          btn.textContent = '★ Auf Watchlist';
-          btn.title = 'Klick zum Entfernen';
-          toast('Auf Watchlist gemerkt');
-        }} else {{
-          btn.classList.remove('watch-remove');
-          btn.classList.add('watch-add');
-          btn.textContent = '+ Merken';
-          btn.title = 'Auf Watchlist setzen';
-          btn.removeAttribute('data-titel');
-          toast('Von Watchlist entfernt');
-        }}
-        btn.disabled = false;
-      }} else {{
-        btn.disabled = false;
-        btn.textContent = alter;
-        toast('Fehler: ' + (r.data.error || r.status), true);
-      }}
-    }} catch (err) {{
-      btn.disabled = false;
-      btn.textContent = alter;
-      toast('Netzwerkfehler: ' + err.message, true);
-    }}
-  }});
+  // Watchlist/Unwatch entfernt - 'Interessant' uebernimmt die Rolle.
 
   // --- Bewerten-Buttons: interessant / beobachten / verworfen ---
   document.addEventListener('click', async function(e) {{
