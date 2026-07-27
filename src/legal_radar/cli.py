@@ -449,13 +449,16 @@ def sync_bewertungen() -> None:
     con = db.connect(s.db_path)
     db.migrate(con)
 
-    remote = github.liste_bewertungen(s.radar_repo, s.github_token)
-    if not remote:
-        typer.echo("Keine Bewertungen auf GitHub (oder kein Token). Nichts zu tun.")
+    # Ohne Repo/Token koennen wir nicht sicher zwischen 'keine Bewertungen'
+    # und 'GitHub nicht erreichbar' unterscheiden. Also gar nichts anfassen.
+    if not (s.radar_repo and s.github_token):
+        typer.echo("Kein GITHUB_TOKEN oder RADAR_REPO. Sync uebersprungen.")
         return
 
+    remote = github.liste_bewertungen(s.radar_repo, s.github_token)
     heute = date.today().isoformat()
-    n_neu = n_upd = n_skip = 0
+    n_neu = n_upd = n_skip = n_gel = 0
+
     for vid, status in remote.items():
         exists = con.execute("SELECT 1 FROM vorgang WHERE id = ?", (vid,)).fetchone()
         if not exists:
@@ -475,8 +478,20 @@ def sync_bewertungen() -> None:
             "VALUES (?, ?, ?, ?)",
             (vid, status, "", heute),
         )
+
+    # Lokale Bewertungen loeschen, deren Issue auf GitHub geschlossen wurde
+    # (Dashboard-Klick auf aktiven Button = Bewertung entfernen).
+    lokal = {r["vorgang_id"] for r in con.execute("SELECT vorgang_id FROM bewertung_user")}
+    zu_loeschen = lokal - set(remote.keys())
+    for vid in zu_loeschen:
+        con.execute("DELETE FROM bewertung_user WHERE vorgang_id = ?", (vid,))
+        n_gel += 1
+
     con.commit()
-    typer.echo(f"Sync: {n_neu} neu, {n_upd} aktualisiert, {n_skip} unbekannte IDs uebersprungen.")
+    typer.echo(
+        f"Sync: {n_neu} neu, {n_upd} aktualisiert, {n_gel} entfernt, "
+        f"{n_skip} unbekannte IDs uebersprungen."
+    )
 
 
 if __name__ == "__main__":

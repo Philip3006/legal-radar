@@ -208,10 +208,29 @@ async function findeBewertung(vorgangId, token) {
 async function handleBewerten(request, env, origin, payload, vid) {
   const status = String(payload?.status || "").trim();
   const begruendung = String(payload?.begruendung || "").trim();
-  const erlaubt = ["interessant", "beobachten", "verworfen"];
+  const erlaubt = ["interessant", "beobachten", "verworfen", "entfernen"];
   if (!erlaubt.includes(status)) {
     return json(400, { error: "status ungültig", erlaubt }, origin);
   }
+
+  // Entfernen: existierendes Bewertung-Issue schliessen. Kein Issue = kein Fehler.
+  if (status === "entfernen") {
+    const existing = await findeBewertung(vid, env.GITHUB_TOKEN);
+    if (!existing) {
+      return json(200, { ok: true, removed: false, reason: "keine bewertung vorhanden" }, origin);
+    }
+    const r = await ghPatch(
+      `/repos/${REPO}/issues/${existing.number}`,
+      env.GITHUB_TOKEN,
+      { state: "closed" },
+    );
+    if (!r.ok) {
+      const t = await r.text();
+      return json(502, { error: "github close failed", detail: t.slice(0, 200) }, origin);
+    }
+    return json(200, { ok: true, removed: true, issue: existing.number }, origin);
+  }
+
   const titel = String(payload?.titel || "").trim() || vid;
 
   const body =

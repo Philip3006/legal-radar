@@ -103,9 +103,29 @@ def test_sync_ueberspringt_unbekannte_vorgang_ids(env, monkeypatch):
     assert "1 unbekannte" in result.output
 
 
-def test_sync_leere_liste_meldet_nichts_zu_tun(env, monkeypatch):
+def test_sync_ohne_token_uebergeht(env, monkeypatch):
     from legal_radar import cli
 
-    monkeypatch.setattr(cli.github, "liste_bewertungen", lambda r, t: {})
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     result = CliRunner().invoke(cli.app, ["sync-bewertungen"])
-    assert "Nichts zu tun" in result.output
+    assert "Sync uebersprungen" in result.output
+
+
+def test_sync_loescht_geschlossene_bewertungen(env, monkeypatch):
+    """Bewertung war da, ist jetzt auf GitHub geschlossen -> lokal loeschen."""
+    from legal_radar import cli
+
+    _seed_vorgang(env, "dip:1")
+    state = {"data": {"dip:1": "interessant"}}
+    monkeypatch.setattr(cli.github, "liste_bewertungen", lambda r, t: state["data"])
+    runner = CliRunner()
+    runner.invoke(cli.app, ["sync-bewertungen"])
+
+    # Simuliere: GitHub-Issue geschlossen -> nicht mehr in remote
+    state["data"] = {}
+    result = runner.invoke(cli.app, ["sync-bewertungen"])
+    assert "1 entfernt" in result.output
+
+    con = db.connect(env / "radar.db")
+    rows = con.execute("SELECT * FROM bewertung_user").fetchall()
+    assert rows == []

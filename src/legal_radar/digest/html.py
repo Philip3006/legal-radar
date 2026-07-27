@@ -233,9 +233,21 @@ def _card(
     kosten_val = int(row["erf_aufwand_eur"] or 0)
     erst_val = html.escape(row["erstgesehen"] or "")
     anw_val = html.escape(row["anwendungsbeginn"] or "")
+    vid_attr = html.escape(row["id"], quote=True)
+    aktuelle_bewertung = bewertungen.get(row["id"], "")
+    dot_html = ""
+    if aktuelle_bewertung:
+        symbol = {"interessant": "★", "beobachten": "◐", "verworfen": "✕"}.get(
+            aktuelle_bewertung, ""
+        )
+        dot_html = (
+            f'<span class="bewertung-dot" data-status="{aktuelle_bewertung}" '
+            f'title="Bewertung: {aktuelle_bewertung}">{symbol}</span>'
+        )
 
     return f"""
     <details class="card" data-stadium="{stadium}" data-muster="{muster_key}"
+             data-vorgang="{vid_attr}" data-bewertung="{aktuelle_bewertung}"
              data-titel="{such_attr}" data-kosten="{kosten_val}"
              data-erstgesehen="{erst_val}" data-anwendungsbeginn="{anw_val}">
       <summary class="card-summary">
@@ -244,6 +256,7 @@ def _card(
             <span class="stadium-dot" style="--dot:{farbe}"
                   aria-label="{stadium_txt}"></span>
             {neu_dot}
+            {dot_html}
             <h3 class="card-titel">{titel}</h3>
           </div>
           {meta_zeile}
@@ -808,6 +821,33 @@ def _shell(
     background: var(--neu);
     box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
   }}
+  .bewertung-dot {{
+    flex-shrink: 0; display: inline-flex; align-items: center;
+    justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    font-size: 11px; font-weight: 700; line-height: 1;
+    background: var(--surface-3); color: var(--muted);
+    border: 1px solid var(--border);
+  }}
+  .bewertung-dot[data-status="interessant"] {{
+    color: var(--amber); border-color: var(--amber);
+    background: rgba(146,64,14,0.08);
+  }}
+  .bewertung-dot[data-status="beobachten"] {{
+    color: var(--text-soft); border-color: var(--border-strong);
+  }}
+  .bewertung-dot[data-status="verworfen"] {{
+    color: var(--muted); border-color: var(--border);
+    background: var(--surface-3);
+  }}
+  .card[data-bewertung="verworfen"] .card-titel {{
+    opacity: 0.55; text-decoration: line-through;
+    text-decoration-color: rgba(0,0,0,0.2);
+  }}
+  .card.faded-out {{
+    opacity: 0.35; transition: opacity 400ms ease;
+    pointer-events: none;
+  }}
 
   .card-titel {{
     margin: 0; font-size: 16px; font-weight: 600;
@@ -1008,12 +1048,19 @@ def _shell(
 <input type="radio" name="fo" id="f-oneu">
 <input type="radio" name="fo" id="f-obald">
 <input type="radio" name="fo" id="f-okosten">
+<input type="radio" name="fb" id="f-ball" checked>
+<input type="radio" name="fb" id="f-bbewertet">
+<input type="radio" name="fb" id="f-bunbewertet">
 
 <header class="site-header">
   <div class="header-inner">
     <div class="titelzeile">
       <h1>Legal Radar</h1>
-      <div class="sub">Stand {stand} &nbsp;·&nbsp; {n} Vorgang{"e" if n != 1 else ""}</div>
+      <div class="sub">
+        Stand {stand} &nbsp;·&nbsp; {n} Vorgang{"e" if n != 1 else ""}
+        &nbsp;·&nbsp;
+        <span id="bewertungs-fortschritt" class="fortschritt">0 von {n} bewertet</span>
+      </div>
     </div>
     <p class="claim">
       Frühwarnsystem für Bundestags-Gesetzgebung: welche neuen Pflichten,
@@ -1051,6 +1098,12 @@ def _shell(
       <label for="f-k10">&gt; 10 Mio € <span class="fc">({fc["k10"]})</span></label>
       <label for="f-k100">&gt; 100 Mio € <span class="fc">({fc["k100"]})</span></label>
       <label for="f-k1000">&gt; 1 Mrd € <span class="fc">({fc["k1000"]})</span></label>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Bewertung</span>
+      <label for="f-ball">Alle</label>
+      <label for="f-bbewertet">Bewertet</label>
+      <label for="f-bunbewertet">Unbewertet</label>
     </div>
     <div class="filter-row">
       <span class="filter-label">Sortiert</span>
@@ -1109,7 +1162,56 @@ def _shell(
 
   // Watchlist/Unwatch entfernt - 'Interessant' uebernimmt die Rolle.
 
-  // --- Bewerten-Buttons: interessant / beobachten / verworfen ---
+  // --- Bewerten: setzen / umbewerten / entfernen ---
+  var BEWERTUNG_SYMBOL = {{interessant: '★', beobachten: '◐', verworfen: '✕'}};
+
+  function alterStatusVon(id) {{
+    var vorhandener = document.querySelector(
+      '.card[data-vorgang="' + CSS.escape(id) + '"] button.bewerten.aktiv'
+    );
+    return vorhandener ? vorhandener.getAttribute('data-status') : '';
+  }}
+
+  function syncKartenUI(id, neuerStatus) {{
+    // Alle Karten-Instanzen mit gleicher vorgang-id synchron aktualisieren
+    // (Karten koennen doppelt vorkommen: einmal in Bewertungs-Sektion,
+    //  einmal in Gruppen-Sektion).
+    var karten = document.querySelectorAll('.card[data-vorgang="' + CSS.escape(id) + '"]');
+    karten.forEach(function(card) {{
+      card.setAttribute('data-bewertung', neuerStatus);
+      // Buttons updaten
+      card.querySelectorAll('button.bewerten').forEach(function(b) {{
+        var isNeu = b.getAttribute('data-status') === neuerStatus;
+        b.classList.toggle('aktiv', isNeu);
+      }});
+      // Dot im Header aktualisieren
+      var zeile = card.querySelector('.card-titel-zeile');
+      var alterDot = card.querySelector('.bewertung-dot');
+      if (alterDot) alterDot.remove();
+      if (neuerStatus) {{
+        var dot = document.createElement('span');
+        dot.className = 'bewertung-dot';
+        dot.setAttribute('data-status', neuerStatus);
+        dot.title = 'Bewertung: ' + neuerStatus;
+        dot.textContent = BEWERTUNG_SYMBOL[neuerStatus] || '';
+        // vor h3.card-titel einfuegen
+        var titel = zeile.querySelector('.card-titel');
+        zeile.insertBefore(dot, titel);
+      }}
+      // Karte in Bewertungs-Sektion, die jetzt nicht mehr passt: ausblenden
+      var sektion = card.closest('details.bewertung-rubrik');
+      if (sektion) {{
+        var sektStatus = sektion.className.match(/bewertung-(interessant|beobachten|verworfen)/);
+        if (sektStatus && sektStatus[1] !== neuerStatus) {{
+          card.classList.add('faded-out');
+        }} else {{
+          card.classList.remove('faded-out');
+        }}
+      }}
+    }});
+    updateFortschritt();
+  }}
+
   document.addEventListener('click', async function(e) {{
     var btn = e.target.closest('button.bewerten');
     if (!btn) return;
@@ -1123,17 +1225,26 @@ def _shell(
     var id     = btn.getAttribute('data-vorgang');
     var titel  = btn.getAttribute('data-titel') || '';
     var status = btn.getAttribute('data-status');
-    var gruppe = btn.parentElement;
+    var istAktiv = btn.classList.contains('aktiv');
+    var effektiverStatus = istAktiv ? 'entfernen' : status;
+
+    // Downgrade-Warnung: von interessant nach verworfen ohne Mail-Loop-Verlust nachfragen
+    if (!istAktiv && status === 'verworfen') {{
+      var alter = alterStatusVon(id);
+      if (alter === 'interessant') {{
+        if (!confirm('Von Interessant nach Verworfen degradieren? Push-Alerts entfallen.')) {{
+          return;
+        }}
+      }}
+    }}
 
     btn.disabled = true;
     try {{
-      var r = await callWorker('/bewerten', {{id: id, titel: titel, status: status}});
+      var r = await callWorker('/bewerten', {{id: id, titel: titel, status: effektiverStatus}});
       if (r.ok) {{
-        gruppe.querySelectorAll('button.bewerten').forEach(function(b) {{
-          b.classList.remove('aktiv');
-        }});
-        btn.classList.add('aktiv');
-        toast('Bewertung gespeichert: ' + status);
+        var neuerStatus = effektiverStatus === 'entfernen' ? '' : status;
+        syncKartenUI(id, neuerStatus);
+        toast(neuerStatus ? 'Bewertung: ' + neuerStatus : 'Bewertung entfernt');
       }} else {{
         toast('Fehler: ' + (r.data.error || r.status), true);
       }}
@@ -1143,6 +1254,22 @@ def _shell(
       btn.disabled = false;
     }}
   }});
+
+  // Fortschritt: X von N bewertet (deduped ueber data-vorgang, weil Karten
+  // doppelt gerendert werden).
+  function updateFortschritt() {{
+    var el = document.getElementById('bewertungs-fortschritt');
+    if (!el) return;
+    var alleIds = new Set();
+    var bewertetIds = new Set();
+    document.querySelectorAll('.card[data-vorgang]').forEach(function(card) {{
+      var id = card.getAttribute('data-vorgang');
+      alleIds.add(id);
+      if (card.getAttribute('data-bewertung')) bewertetIds.add(id);
+    }});
+    el.textContent = bewertetIds.size + ' von ' + alleIds.size + ' bewertet';
+  }}
+  updateFortschritt();
 
   // --- Filter/Suche/Sortierung kombiniert ---
   var suche = document.getElementById('suche');
@@ -1190,6 +1317,7 @@ def _shell(
     var muster = selected('ft');
     var kosten = selected('fk');
     var sort   = selected('fo');
+    var bew    = selected('fb');
     var q = (suche && suche.value || '').trim().toLowerCase();
     var stadien = STATUS_STADIEN[status] || null;
     var minK = KOSTEN_MIN[kosten] || 0;
@@ -1204,6 +1332,8 @@ def _shell(
         if (k <= minK) hide = true;
       }}
       if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
+      if (!hide && bew === 'bbewertet' && !c.getAttribute('data-bewertung')) hide = true;
+      if (!hide && bew === 'bunbewertet' && c.getAttribute('data-bewertung')) hide = true;
       c.classList.toggle('hidden-filter', hide);
       if (!hide) anySichtbar = true;
     }});
@@ -1215,23 +1345,24 @@ def _shell(
     if (emptyEl) emptyEl.style.display = anySichtbar ? 'none' : '';
 
     applySort(sort);
-    syncUrl(status, muster, kosten, sort, q);
+    syncUrl(status, muster, kosten, sort, q, bew);
   }}
 
   // --- URL-State ---
-  function syncUrl(s, t, k, o, q) {{
+  function syncUrl(s, t, k, o, q, b) {{
     var p = new URLSearchParams();
     if (s !== 'all')     p.set('s', s);
     if (t !== 'mall')    p.set('t', t);
     if (k !== 'kall')    p.set('k', k);
     if (o !== 'oscore')  p.set('o', o);
+    if (b && b !== 'ball') p.set('b', b);
     if (q)               p.set('q', q);
     var qs = p.toString();
     history.replaceState(null, '', qs ? '?' + qs : location.pathname);
   }}
   function restoreFromUrl() {{
     var p = new URLSearchParams(location.search);
-    var map = {{ s: 'fs', t: 'ft', k: 'fk', o: 'fo' }};
+    var map = {{ s: 'fs', t: 'ft', k: 'fk', o: 'fo', b: 'fb' }};
     Object.keys(map).forEach(function(key) {{
       var v = p.get(key);
       if (!v) return;
@@ -1242,8 +1373,9 @@ def _shell(
     if (q && suche) suche.value = q;
   }}
 
-  document.querySelectorAll('input[name=fs], input[name=ft], input[name=fk], input[name=fo]')
-    .forEach(function(el) {{ el.addEventListener('change', applyFilters); }});
+  document.querySelectorAll(
+    'input[name=fs], input[name=ft], input[name=fk], input[name=fo], input[name=fb]'
+  ).forEach(function(el) {{ el.addEventListener('change', applyFilters); }});
   if (suche) {{
     suche.addEventListener('input', function() {{
       if (suchTimer) clearTimeout(suchTimer);
@@ -1252,7 +1384,7 @@ def _shell(
   }}
   var resetBtn = document.getElementById('reset-filter');
   if (resetBtn) resetBtn.addEventListener('click', function() {{
-    ['f-all', 'f-mall', 'f-kall', 'f-oscore'].forEach(function(id) {{
+    ['f-all', 'f-mall', 'f-kall', 'f-oscore', 'f-ball'].forEach(function(id) {{
       var el = document.getElementById(id);
       if (el) el.checked = true;
     }});
@@ -1278,12 +1410,27 @@ def _shell(
       e.preventDefault();
       suche.focus();
     }} else if (e.key === 'Escape') {{
-      ['f-all', 'f-mall', 'f-kall', 'f-oscore'].forEach(function(id) {{
+      ['f-all', 'f-mall', 'f-kall', 'f-oscore', 'f-ball'].forEach(function(id) {{
         var el = document.getElementById(id);
         if (el) el.checked = true;
       }});
       if (suche) suche.value = '';
       applyFilters();
+    }} else if (['1', '2', '3', '0'].indexOf(e.key) >= 0) {{
+      // Keyboard-Bewertung: aktive Karte finden (aufgeklappte details.card)
+      var karte = document.querySelector('details.card[open]');
+      if (!karte) return;
+      var mapping = {{'1': 'interessant', '2': 'beobachten', '3': 'verworfen', '0': 'entfernen'}};
+      var ziel = mapping[e.key];
+      if (ziel === 'entfernen') {{
+        var aktiv = karte.querySelector('button.bewerten.aktiv');
+        if (aktiv) aktiv.click();
+      }} else {{
+        var btn = karte.querySelector('button.bewerten[data-status="' + ziel + '"]');
+        // Klick nur auslosen wenn nicht schon aktiv (Klick wuerde sonst entfernen)
+        if (btn && !btn.classList.contains('aktiv')) btn.click();
+      }}
+      e.preventDefault();
     }}
   }});
 }})();
