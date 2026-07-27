@@ -634,7 +634,7 @@ def _shell(
     max-width: 1100px; margin: 0 auto; padding: 20px 32px 8px;
   }}
   .hero-inner {{
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   }}
   .hero-tile {{
     display: flex; flex-direction: column; align-items: flex-start;
@@ -688,11 +688,6 @@ def _shell(
   }}
   .hero-tile[data-hero="bverworfen"] .tile-label {{ color: var(--muted); }}
 
-  .hero-tile[data-hero="bunbewertet"].aktiv {{
-    background: rgba(16,185,129,0.1); border-color: var(--neu);
-  }}
-  .hero-tile[data-hero="bunbewertet"] .tile-label {{ color: var(--neu); }}
-
   @media (max-width: 900px) {{
     .bewertungs-hero {{ padding: 16px 18px 4px; }}
     .hero-inner {{ grid-template-columns: repeat(2, 1fr); gap: 8px; }}
@@ -740,16 +735,17 @@ def _shell(
     min-width: 68px; text-transform: uppercase; letter-spacing: 0.04em;
     font-size: 11px;
   }}
-  /* Basis-Chip: dezent */
+  /* Basis-Chip: sichtbar als Button, aber ruhig */
   .filter-row label {{
-    padding: 6px 12px; border: 1px solid transparent; border-radius: 999px;
-    background: transparent; cursor: pointer;
-    color: var(--muted); font-weight: 500;
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--bg); cursor: pointer;
+    color: var(--text-soft); font-weight: 500;
     transition: all 120ms ease;
     display: inline-flex; align-items: center; gap: 4px;
   }}
   .filter-row label:hover {{
     color: var(--text); background: var(--surface-3);
+    border-color: var(--border-strong);
   }}
   .filter-row label .fc {{
     font-variant-numeric: tabular-nums; font-size: 11px;
@@ -1138,7 +1134,6 @@ def _shell(
 <input type="radio" name="fo" id="f-okosten">
 <input type="radio" name="fb" id="f-ball" checked>
 <input type="radio" name="fb" id="f-bbewertet">
-<input type="radio" name="fb" id="f-bunbewertet">
 <input type="radio" name="fb" id="f-binteressant">
 <input type="radio" name="fb" id="f-bbeobachten">
 <input type="radio" name="fb" id="f-bverworfen">
@@ -1180,11 +1175,6 @@ def _shell(
       <span class="tile-count" data-count="verworfen">0</span>
       <span class="tile-label">✕ Verworfen</span>
       <span class="tile-hint">Als irrelevant markiert</span>
-    </button>
-    <button type="button" class="hero-tile hero-unbewertet" data-hero="bunbewertet">
-      <span class="tile-count" data-count="unbewertet">{n}</span>
-      <span class="tile-label">◯ Unbewertet</span>
-      <span class="tile-hint">Noch nicht klassifiziert</span>
     </button>
   </div>
 </section>
@@ -1391,7 +1381,6 @@ def _shell(
       interessant: perStatus.interessant.size,
       beobachten: perStatus.beobachten.size,
       verworfen: perStatus.verworfen.size,
-      unbewertet: alleIds.size - bewertetN,
     }};
     Object.keys(counts).forEach(function(k) {{
       var el = document.querySelector('[data-count="' + k + '"]');
@@ -1485,7 +1474,6 @@ def _shell(
       if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
       var cBew = c.getAttribute('data-bewertung');
       if (!hide && bew === 'bbewertet' && !cBew) hide = true;
-      if (!hide && bew === 'bunbewertet' && cBew) hide = true;
       if (!hide && bew === 'binteressant' && cBew !== 'interessant') hide = true;
       if (!hide && bew === 'bbeobachten' && cBew !== 'beobachten') hide = true;
       if (!hide && bew === 'bverworfen' && cBew !== 'verworfen') hide = true;
