@@ -64,7 +64,9 @@ jobs:
         run: |
           uv run radar init
           uv run radar fetch --source dip --since 2024-01-01
+          uv run radar fetch --source bgbl --since 2024-01-01
           uv run radar score
+          uv run radar sync-bewertungen
           uv run radar digest --since 7d ${{ inputs.send_mail && '--send-mail' || '' }}
           uv run radar render-dashboard
 

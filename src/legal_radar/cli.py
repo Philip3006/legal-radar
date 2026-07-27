@@ -7,7 +7,7 @@ from pathlib import Path
 import anthropic
 import typer
 
-from legal_radar.core import db, github, hashing, smtp
+from legal_radar.core import db, github, hashing, matching, smtp
 from legal_radar.core.config import Settings
 from legal_radar.digest import summary as summary_mod
 from legal_radar.digest.events import Event, events_since
@@ -40,6 +40,23 @@ def _parse_int(v) -> int | None:
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _finde_dip_match(con, bgbl_titel: str):
+    """Sucht einen DIP-Vorgang mit gleichem Titel-Kern. None wenn kein Treffer.
+
+    Normalisierung siehe core/matching.py. Kein Fuzzy - lieber verpassen als
+    falsch verheiraten.
+    """
+    ziel = matching.titel_normalize(bgbl_titel)
+    if len(ziel) < 20:
+        return None
+    for row in con.execute(
+        "SELECT * FROM vorgang WHERE quelle = 'dip' AND stadium != 'verkuendet'"
+    ):
+        if matching.titel_normalize(row["titel"] or "") == ziel:
+            return row
+    return None
 
 
 def _parse_datum(v) -> str | None:
@@ -104,13 +121,36 @@ def fetch(source: str = "dip", since: str = "2024-01-01", dry_run: bool = False)
         # Textlose Quellen (BGBl-RSS): Metadaten trotzdem persistieren,
         # damit Stadienwechsel (bt -> verkuendet) in der History landen.
         if not text:
+            anw = v.anwendungsbeginn.isoformat() if v.anwendungsbeginn else None
+            # Existiert der Vorgang schon als DIP-Eintrag? Dann ist die BGBl-
+            # Meldung ein Stadienwechsel des DIP-Vorgangs, kein neuer Vorgang.
+            dip_match = _finde_dip_match(con, v.titel) if v.quelle == "bgbl" else None
+            if dip_match:
+                bestehende_row = dict(dip_match)
+                update = {
+                    "id": bestehende_row["id"],
+                    "quelle": bestehende_row["quelle"],
+                    "titel": bestehende_row["titel"],
+                    "stadium": "verkuendet",
+                    "quelle_url": bestehende_row["quelle_url"],
+                    "anwendungsbeginn": anw or bestehende_row.get("anwendungsbeginn"),
+                    "muster": bestehende_row.get("muster") or "keins",
+                    "input_hash": bestehende_row["input_hash"],
+                }
+                if dry_run:
+                    typer.echo(f"  [dry-run] {v.id} -> match {bestehende_row['id']}")
+                    continue
+                changes = db.upsert(con, update)
+                if changes:
+                    n_geaendert += 1
+                continue
             row = {
                 "id": v.id,
                 "quelle": v.quelle,
                 "titel": v.titel,
                 "stadium": v.stadium,
                 "quelle_url": v.quelle_url,
-                "anwendungsbeginn": v.anwendungsbeginn.isoformat() if v.anwendungsbeginn else None,
+                "anwendungsbeginn": anw,
                 "muster": "keins",
                 "input_hash": hashing.input_hash(v),
             }
@@ -397,6 +437,48 @@ def bewerten(vorgang_id: str, status: str, begruendung: str = "") -> None:
     )
     con.commit()
     typer.echo(f"ok: {vorgang_id} -> {status}")
+
+
+@app.command("sync-bewertungen")
+def sync_bewertungen() -> None:
+    """GitHub-Issue-Bewertungen in die DB-Tabelle bewertung_user spiegeln.
+
+    Klicks im Dashboard landen als Issues mit Label 'bewertung'. Fuer
+    Score-Kalibrierung brauchen wir sie aber in der DB. Der Sync ist
+    idempotent (INSERT OR REPLACE), also unbedenklich im Cron.
+    """
+    s = Settings.load()
+    con = db.connect(s.db_path)
+    db.migrate(con)
+
+    remote = github.liste_bewertungen(s.radar_repo, s.github_token)
+    if not remote:
+        typer.echo("Keine Bewertungen auf GitHub (oder kein Token). Nichts zu tun.")
+        return
+
+    heute = date.today().isoformat()
+    n_neu = n_upd = n_skip = 0
+    for vid, status in remote.items():
+        exists = con.execute("SELECT 1 FROM vorgang WHERE id = ?", (vid,)).fetchone()
+        if not exists:
+            n_skip += 1
+            continue
+        alt = con.execute(
+            "SELECT status FROM bewertung_user WHERE vorgang_id = ?", (vid,)
+        ).fetchone()
+        if alt is None:
+            n_neu += 1
+        elif alt["status"] != status:
+            n_upd += 1
+        else:
+            continue
+        con.execute(
+            "INSERT OR REPLACE INTO bewertung_user (vorgang_id, status, begruendung, ts) "
+            "VALUES (?, ?, ?, ?)",
+            (vid, status, "", heute),
+        )
+    con.commit()
+    typer.echo(f"Sync: {n_neu} neu, {n_upd} aktualisiert, {n_skip} unbekannte IDs uebersprungen.")
 
 
 if __name__ == "__main__":
