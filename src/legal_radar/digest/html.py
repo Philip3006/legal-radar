@@ -695,6 +695,16 @@ def _shell(
     .hero-tile .tile-count {{ font-size: 20px; }}
     .hero-tile .tile-hint {{ display: none; }}
   }}
+  @media (max-width: 720px) {{
+    .bewertungs-hero {{ padding: 10px 14px 2px; }}
+    .hero-inner {{ gap: 6px; }}
+    .hero-tile {{
+      min-height: 48px; padding: 8px 10px;
+      flex-direction: row; align-items: center; gap: 8px;
+    }}
+    .hero-tile .tile-count {{ font-size: 16px; }}
+    .hero-tile .tile-label {{ font-size: 12px; }}
+  }}
 
   /* Filter + Suche */
   .toolbar {{
@@ -706,6 +716,35 @@ def _shell(
     border-bottom: 1px solid var(--border);
   }}
   .toolbar-inner {{ max-width: 1100px; margin: 0 auto; display: grid; gap: 10px; }}
+
+  /* App-Bar (mobile). Auf Desktop enthaelt sie nur die Suche fullwidth,
+     der Filter-Button ist verborgen. */
+  .app-bar {{ display: flex; align-items: center; gap: 10px; }}
+  .app-bar .search-wrap {{ flex: 1; }}
+  .filter-fab {{
+    display: none;
+    align-items: center; gap: 6px;
+    height: 44px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--surface-3); color: var(--text);
+    font: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }}
+  .filter-fab:hover {{ background: var(--surface-2); }}
+  .filter-badge {{
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 6px;
+    border-radius: 999px; background: var(--text); color: var(--bg);
+    font-size: 11px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }}
+
+  /* Filter-Sheet: Desktop = transparenter Wrapper (filter-rows fliessen
+     inline in die Toolbar). sheet-header/-footer nur auf Mobile
+     sichtbar. */
+  .filter-sheet {{ display: contents; }}
+  .filter-sheet-body {{ display: contents; }}
+  .sheet-header, .sheet-footer {{ display: none; }}
 
   .search-wrap {{ position: relative; }}
   .search-wrap::before {{
@@ -1092,7 +1131,7 @@ def _shell(
     .summary-text {{ font-size: 15px; }}
     .rubrik {{ margin-bottom: 36px; }}
     .rubrik-titel {{ font-size: 18px; }}
-    .card-summary {{ padding: 14px 16px; gap: 10px; }}
+    .card-summary {{ padding: 14px 16px; gap: 10px; min-height: 56px; }}
     .card-titel {{ font-size: 15px; }}
     .card-meta {{ font-size: 12px; padding-left: 0; }}
     .card-body {{ padding: 4px 16px 16px; }}
@@ -1101,7 +1140,83 @@ def _shell(
     .card-footer .card-link {{ text-align: center; padding: 8px;
                                border: 1px solid var(--border); border-radius: 8px;
                                border-bottom-color: var(--border); }}
+    .bewerten {{ min-height: 40px; }}
     #toast {{ left: 16px; right: 16px; bottom: 16px; max-width: none; }}
+
+    /* App-Bar zeigt Filter-Button */
+    .filter-fab {{ display: inline-flex; }}
+    .toolbar-inner {{ gap: 0; }}
+    /* Sticky-Bar ohne Blur (bessere Performance auf Mobile) */
+    .toolbar {{
+      background: var(--bg); backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }}
+
+    /* Filter-Sheet als Vollbild-Overlay */
+    .filter-sheet {{
+      display: flex; flex-direction: column;
+      position: fixed; inset: 0; z-index: 100;
+      background: var(--bg);
+      transform: translateY(100%);
+      transition: transform 220ms ease;
+      visibility: hidden;
+    }}
+    body.filter-open .filter-sheet {{
+      transform: translateY(0);
+      visibility: visible;
+    }}
+    body.filter-open {{ overflow: hidden; }}
+
+    .sheet-header {{
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }}
+    .sheet-title {{ font-size: 16px; font-weight: 700; flex: 1; }}
+    .sheet-btn-sec {{
+      background: none; border: none; padding: 8px 10px;
+      color: var(--text-soft); font: inherit; font-size: 13px;
+      cursor: pointer; border-radius: 8px;
+    }}
+    .sheet-btn-sec:hover {{ background: var(--surface-3); color: var(--text); }}
+    .sheet-close {{
+      background: none; border: none; padding: 8px 12px;
+      color: var(--text); font-size: 18px; cursor: pointer;
+      border-radius: 8px;
+    }}
+    .sheet-close:hover {{ background: var(--surface-3); }}
+
+    .filter-sheet-body {{
+      display: block;
+      flex: 1; overflow-y: auto;
+      padding: 16px 18px 100px;
+    }}
+    .filter-sheet-body .filter-row {{
+      display: block; margin-bottom: 18px;
+    }}
+    .filter-sheet-body .filter-label {{
+      display: block; margin-bottom: 8px;
+      min-width: auto; padding: 0;
+    }}
+    .filter-sheet-body .filter-row label {{
+      display: inline-flex; margin: 0 6px 6px 0;
+      min-height: 36px; padding: 8px 14px;
+    }}
+
+    .sheet-footer {{
+      display: block;
+      padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }}
+    .sheet-btn-primary {{
+      width: 100%; min-height: 48px;
+      background: var(--text); color: var(--bg);
+      border: none; border-radius: 10px;
+      font: inherit; font-size: 15px; font-weight: 600;
+      cursor: pointer;
+    }}
   }}
 
   @media print {{
@@ -1181,40 +1296,64 @@ def _shell(
 
 <div class="toolbar">
   <div class="toolbar-inner">
-    <div class="search-wrap">
-      <input type="search" id="suche" placeholder="Vorgang suchen &hellip; (Titel)"
-             autocomplete="off">
+    <div class="app-bar">
+      <div class="search-wrap">
+        <input type="search" id="suche" placeholder="Vorgang suchen &hellip; (Titel)"
+               autocomplete="off">
+      </div>
+      <button type="button" id="filter-open" class="filter-fab" aria-label="Filter oeffnen">
+        <span aria-hidden="true">&#9881;</span> Filter
+        <span id="filter-badge" class="filter-badge" hidden>0</span>
+      </button>
     </div>
-    <div class="filter-row">
-      <span class="filter-label">Stadium</span>
-      <label for="f-all">Alle <span class="fc">({fc["all"]})</span></label>
-      <label for="f-aktiv">Aktive Verfahren <span class="fc">({fc["aktiv"]})</span></label>
-      <label for="f-anwendbar">Bereits geltend <span class="fc">({fc["anwendbar"]})</span></label>
-      <label for="f-tot">Eingestellt <span class="fc">({fc["tot"]})</span></label>
-    </div>
-    <div class="filter-row">
-      <span class="filter-label">Typ</span>
-      <label for="f-mall">Alle</label>
-      <label for="f-compliance">Compliance <span class="fc">({fc["compliance"]})</span></label>
-      <label for="f-nachweis">Nachweis <span class="fc">({fc["nachweis"]})</span></label>
-      <label for="f-datenprodukt">Datenprodukt
-        <span class="fc">({fc["datenprodukt"]})</span></label>
-      <label for="f-vermittlung">Vermittlung
-        <span class="fc">({fc["vermittlung"]})</span></label>
-    </div>
-    <div class="filter-row">
-      <span class="filter-label">Kosten</span>
-      <label for="f-kall">Alle</label>
-      <label for="f-k10">&gt; 10 Mio € <span class="fc">({fc["k10"]})</span></label>
-      <label for="f-k100">&gt; 100 Mio € <span class="fc">({fc["k100"]})</span></label>
-      <label for="f-k1000">&gt; 1 Mrd € <span class="fc">({fc["k1000"]})</span></label>
-    </div>
-    <div class="filter-row">
-      <span class="filter-label">Sortiert</span>
-      <label for="f-oscore">Relevanz</label>
-      <label for="f-oneu">Neueste</label>
-      <label for="f-obald">Bald geltend</label>
-      <label for="f-okosten">Höchste Kosten</label>
+    <div class="filter-sheet" id="filter-sheet" role="dialog" aria-modal="true"
+         aria-label="Filter">
+      <div class="sheet-header">
+        <span class="sheet-title">Filter</span>
+        <button type="button" id="filter-reset" class="sheet-btn-sec">Reset</button>
+        <button type="button" id="filter-close" class="sheet-close" aria-label="Schliessen">
+          &#x2715;
+        </button>
+      </div>
+      <div class="filter-sheet-body">
+        <div class="filter-row">
+          <span class="filter-label">Stadium</span>
+          <label for="f-all">Alle <span class="fc">({fc["all"]})</span></label>
+          <label for="f-aktiv">Aktive Verfahren <span class="fc">({fc["aktiv"]})</span></label>
+          <label for="f-anwendbar">Bereits geltend
+            <span class="fc">({fc["anwendbar"]})</span></label>
+          <label for="f-tot">Eingestellt <span class="fc">({fc["tot"]})</span></label>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">Typ</span>
+          <label for="f-mall">Alle</label>
+          <label for="f-compliance">Compliance <span class="fc">({fc["compliance"]})</span></label>
+          <label for="f-nachweis">Nachweis <span class="fc">({fc["nachweis"]})</span></label>
+          <label for="f-datenprodukt">Datenprodukt
+            <span class="fc">({fc["datenprodukt"]})</span></label>
+          <label for="f-vermittlung">Vermittlung
+            <span class="fc">({fc["vermittlung"]})</span></label>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">Kosten</span>
+          <label for="f-kall">Alle</label>
+          <label for="f-k10">&gt; 10 Mio € <span class="fc">({fc["k10"]})</span></label>
+          <label for="f-k100">&gt; 100 Mio € <span class="fc">({fc["k100"]})</span></label>
+          <label for="f-k1000">&gt; 1 Mrd € <span class="fc">({fc["k1000"]})</span></label>
+        </div>
+        <div class="filter-row">
+          <span class="filter-label">Sortiert</span>
+          <label for="f-oscore">Relevanz</label>
+          <label for="f-oneu">Neueste</label>
+          <label for="f-obald">Bald geltend</label>
+          <label for="f-okosten">Höchste Kosten</label>
+        </div>
+      </div>
+      <div class="sheet-footer">
+        <button type="button" id="filter-apply" class="sheet-btn-primary">
+          Anwenden (<span id="filter-treffer">0</span>)
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -1551,6 +1690,33 @@ def _shell(
       || sort !== 'oscore' || bew !== 'ball' || q
     );
     document.body.classList.toggle('filter-aktiv', !!istGefiltert);
+
+    // Mobile: Badge + Treffer-Zahl aktualisieren
+    updateFilterBadge(status, muster, kosten, sort, bew, q);
+    updateTreffer();
+  }}
+
+  function updateFilterBadge(status, muster, kosten, sort, bew, q) {{
+    var badge = document.getElementById('filter-badge');
+    if (!badge) return;
+    var n = 0;
+    if (status !== 'all')    n++;
+    if (muster !== 'mall')   n++;
+    if (kosten !== 'kall')   n++;
+    if (sort !== 'oscore')   n++;
+    if (bew !== 'ball')      n++;
+    if (q)                   n++;
+    badge.textContent = n;
+    badge.hidden = n === 0;
+  }}
+  function updateTreffer() {{
+    var el = document.getElementById('filter-treffer');
+    if (!el) return;
+    var alle = new Set();
+    document.querySelectorAll('.card[data-vorgang]:not(.hidden-filter)').forEach(function(c) {{
+      alle.add(c.getAttribute('data-vorgang'));
+    }});
+    el.textContent = alle.size;
   }}
 
   // --- URL-State ---
@@ -1600,6 +1766,25 @@ def _shell(
   restoreFromUrl();
   applyFilters();
 
+  // --- Mobile Filter-Sheet ---
+  function sheetOeffnen() {{ document.body.classList.add('filter-open'); }}
+  function sheetSchliessen() {{ document.body.classList.remove('filter-open'); }}
+  var openBtn = document.getElementById('filter-open');
+  var closeBtn = document.getElementById('filter-close');
+  var applyBtn = document.getElementById('filter-apply');
+  var resetBtnSheet = document.getElementById('filter-reset');
+  if (openBtn)  openBtn.addEventListener('click', sheetOeffnen);
+  if (closeBtn) closeBtn.addEventListener('click', sheetSchliessen);
+  if (applyBtn) applyBtn.addEventListener('click', sheetSchliessen);
+  if (resetBtnSheet) resetBtnSheet.addEventListener('click', function() {{
+    ['f-all', 'f-mall', 'f-kall', 'f-oscore', 'f-ball'].forEach(function(id) {{
+      var el = document.getElementById(id);
+      if (el) el.checked = true;
+    }});
+    if (suche) suche.value = '';
+    applyFilters();
+  }});
+
   // --- Keyboard ---
   document.addEventListener('keydown', function(e) {{
     var tag = (e.target.tagName || '').toLowerCase();
@@ -1615,6 +1800,10 @@ def _shell(
       e.preventDefault();
       suche.focus();
     }} else if (e.key === 'Escape') {{
+      if (document.body.classList.contains('filter-open')) {{
+        sheetSchliessen();
+        return;
+      }}
       ['f-all', 'f-mall', 'f-kall', 'f-oscore', 'f-ball'].forEach(function(id) {{
         var el = document.getElementById(id);
         if (el) el.checked = true;
