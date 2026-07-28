@@ -473,10 +473,13 @@ def sync_bewertungen() -> None:
             n_upd += 1
         else:
             continue
+        # UPSERT statt REPLACE: begruendung bleibt erhalten, wenn Zeile schon existiert.
         con.execute(
-            "INSERT OR REPLACE INTO bewertung_user (vorgang_id, status, begruendung, ts) "
-            "VALUES (?, ?, ?, ?)",
-            (vid, status, "", heute),
+            "INSERT INTO bewertung_user (vorgang_id, status, begruendung, ts) "
+            "VALUES (?, ?, '', ?) "
+            "ON CONFLICT(vorgang_id) DO UPDATE SET "
+            "status=excluded.status, ts=excluded.ts",
+            (vid, status, heute),
         )
 
     # Lokale Bewertungen loeschen, deren Issue auf GitHub geschlossen wurde

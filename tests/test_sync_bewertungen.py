@@ -111,6 +111,30 @@ def test_sync_ohne_token_uebergeht(env, monkeypatch):
     assert "Sync uebersprungen" in result.output
 
 
+def test_begruendung_ueberlebt_sync(env, monkeypatch):
+    """CLI-Begruendung darf nicht durch spaeteren GitHub-Sync verloren gehen."""
+    from legal_radar import cli
+    from legal_radar.core import db
+
+    _seed_vorgang(env, "dip:1")
+    con = db.connect(env / "radar.db")
+    # Simuliere: Nutzer hat lokal per CLI bewertet mit Begruendung.
+    con.execute(
+        "INSERT INTO bewertung_user (vorgang_id, status, begruendung, ts) "
+        "VALUES ('dip:1', 'interessant', 'wichtiger Grund', '2026-07-29')"
+    )
+    con.commit()
+
+    monkeypatch.setattr(cli.github, "liste_bewertungen", lambda r, t: {"dip:1": "interessant"})
+    result = CliRunner().invoke(cli.app, ["sync-bewertungen"])
+    assert result.exit_code == 0
+
+    row = con.execute(
+        "SELECT begruendung FROM bewertung_user WHERE vorgang_id = 'dip:1'"
+    ).fetchone()
+    assert row["begruendung"] == "wichtiger Grund"
+
+
 def test_sync_loescht_geschlossene_bewertungen(env, monkeypatch):
     """Bewertung war da, ist jetzt auf GitHub geschlossen -> lokal loeschen."""
     from legal_radar import cli

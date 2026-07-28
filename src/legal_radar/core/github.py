@@ -15,6 +15,25 @@ _VORGANG_LINE = re.compile(r"^\s*vorgang_id\s*:\s*(\S+)\s*$", re.MULTILINE)
 _STATUS_LINE = re.compile(r"^\s*status\s*:\s*(\S+)\s*$", re.MULTILINE)
 ERLAUBTE_STATUS = {"interessant", "beobachten", "verworfen"}
 
+# Ohne Paging fielen ab Issue Nr. 101 stumm alle aelteren Bewertungen weg -
+# sync-bewertungen loescht dann lokale Eintraege, die schlicht "unsichtbar"
+# waren. Recall > Precision, also blaettern bis leer.
+_MAX_SEITEN = 20
+
+
+def _alle_seiten(url: str, headers: dict, params: dict) -> list:
+    """Blaettert GitHub-Issues-API bis leere Seite. Max 20 Seiten (~2000 Items)."""
+    alle: list = []
+    for seite in range(1, _MAX_SEITEN + 1):
+        p = {**params, "per_page": 100, "page": seite}
+        data = get_json(url, params=p, headers=headers)
+        if not isinstance(data, list) or not data:
+            break
+        alle.extend(data)
+        if len(data) < 100:
+            break
+    return alle
+
 
 def liste_watchlist_ids(repo: str, token: str | None) -> list[str]:
     """Rueckgabe: sortierte Liste eindeutiger Vorgangs-IDs auf der Watchlist.
@@ -31,12 +50,10 @@ def liste_watchlist_ids(repo: str, token: str | None) -> list[str]:
         "X-GitHub-Api-Version": "2022-11-28",
     }
     url = f"https://api.github.com/repos/{repo}/issues"
-    data = get_json(
-        url, params={"labels": "watchlist", "state": "open", "per_page": 100}, headers=headers
-    )
+    data = _alle_seiten(url, headers, {"labels": "watchlist", "state": "open"})
 
     ids: set[str] = set()
-    for issue in data if isinstance(data, list) else []:
+    for issue in data:
         body = issue.get("body") or ""
         m = _VORGANG_LINE.search(body)
         if m:
@@ -53,13 +70,13 @@ def liste_bewertungen(repo: str, token: str | None) -> dict[str, str]:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    data = get_json(
+    data = _alle_seiten(
         f"https://api.github.com/repos/{repo}/issues",
-        params={"labels": "bewertung", "state": "open", "per_page": 100},
-        headers=headers,
+        headers,
+        {"labels": "bewertung", "state": "open"},
     )
     out: dict[str, str] = {}
-    for issue in data if isinstance(data, list) else []:
+    for issue in data:
         body = issue.get("body") or ""
         vid_m = _VORGANG_LINE.search(body)
         st_m = _STATUS_LINE.search(body)

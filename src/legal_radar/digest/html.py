@@ -1679,7 +1679,7 @@ def _shell(
       if (!hide && muster !== 'mall' && c.getAttribute('data-muster') !== muster) hide = true;
       if (!hide && minK > 0) {{
         var k = parseInt(c.getAttribute('data-kosten') || '0', 10);
-        if (k <= minK) hide = true;
+        if (k < minK) hide = true;
       }}
       if (!hide && q && (c.getAttribute('data-titel') || '').indexOf(q) < 0) hide = true;
       var cBew = c.getAttribute('data-bewertung');

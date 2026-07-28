@@ -32,8 +32,19 @@ jobs:
         run: |
           mkdir -p data
           git fetch origin data --depth 1 || { echo "Noch kein data-Branch - erster Run."; exit 0; }
-          git show origin/data:radar.db > data/radar.db 2>/dev/null || echo "Keine DB im data-Branch (yet)."
-          git show origin/data:rejected.jsonl > data/rejected.jsonl 2>/dev/null || true
+          # Nach temp schreiben und nur bei Erfolg umbenennen - sonst haetten wir
+          # bei git-show-Fehler eine 0-Byte-DB, die SQLite spaeter beschaedigt.
+          if git show origin/data:radar.db > data/radar.db.tmp 2>/dev/null; then
+            mv data/radar.db.tmp data/radar.db
+          else
+            rm -f data/radar.db.tmp
+            echo "Keine DB im data-Branch (yet)."
+          fi
+          if git show origin/data:rejected.jsonl > data/rejected.jsonl.tmp 2>/dev/null; then
+            mv data/rejected.jsonl.tmp data/rejected.jsonl
+          else
+            rm -f data/rejected.jsonl.tmp
+          fi
 
       - name: Config aus Secrets bauen
         env:

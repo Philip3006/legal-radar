@@ -79,18 +79,24 @@ async function ghPatch(path, token, body) {
   });
 }
 
+// Paging: ab Issue Nr. 101 wuerde ohne Blaettern jeder Klick ein Duplikat anlegen.
+const MAX_SEITEN = 20;
+
 async function findeExistierendes(vorgangId, token) {
-  // Alle offenen watchlist-Issues holen (bis 100 - wir haben nie mehr)
-  const r = await ghGet(
-    `/repos/${REPO}/issues?labels=watchlist&state=open&per_page=100`,
-    token,
-  );
-  if (!r.ok) return null;
-  const issues = await r.json();
-  for (const issue of issues) {
-    const body = issue.body || "";
-    const m = body.match(/^\s*vorgang_id\s*:\s*(\S+)\s*$/m);
-    if (m && m[1] === vorgangId) return issue.number;
+  for (let seite = 1; seite <= MAX_SEITEN; seite++) {
+    const r = await ghGet(
+      `/repos/${REPO}/issues?labels=watchlist&state=open&per_page=100&page=${seite}`,
+      token,
+    );
+    if (!r.ok) return null;
+    const issues = await r.json();
+    if (!Array.isArray(issues) || issues.length === 0) return null;
+    for (const issue of issues) {
+      const body = issue.body || "";
+      const m = body.match(/^\s*vorgang_id\s*:\s*(\S+)\s*$/m);
+      if (m && m[1] === vorgangId) return issue.number;
+    }
+    if (issues.length < 100) return null;
   }
   return null;
 }
@@ -115,6 +121,14 @@ export default {
       !["/watch", "/unwatch", "/bewerten"].includes(url.pathname)
     ) {
       return json(404, { error: "not found" }, origin);
+    }
+
+    // Origin-Whitelist: WATCH_TOKEN steht oeffentlich im gerenderten Dashboard,
+    // ist also kein Secret. Der Origin-Check ist der eigentliche Riegel gegen
+    // Fremdseiten. Requests ohne Origin (z.B. curl) duerfen durch, damit
+    // Health-Pings + Debugging funktionieren.
+    if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+      return json(403, { error: "origin not allowed" }, origin);
     }
 
     // Token check
@@ -192,15 +206,19 @@ export default {
 };
 
 async function findeBewertung(vorgangId, token) {
-  const r = await ghGet(
-    `/repos/${REPO}/issues?labels=bewertung&state=open&per_page=100`,
-    token,
-  );
-  if (!r.ok) return null;
-  const issues = await r.json();
-  for (const issue of issues) {
-    const m = (issue.body || "").match(/^\s*vorgang_id\s*:\s*(\S+)\s*$/m);
-    if (m && m[1] === vorgangId) return issue;
+  for (let seite = 1; seite <= MAX_SEITEN; seite++) {
+    const r = await ghGet(
+      `/repos/${REPO}/issues?labels=bewertung&state=open&per_page=100&page=${seite}`,
+      token,
+    );
+    if (!r.ok) return null;
+    const issues = await r.json();
+    if (!Array.isArray(issues) || issues.length === 0) return null;
+    for (const issue of issues) {
+      const m = (issue.body || "").match(/^\s*vorgang_id\s*:\s*(\S+)\s*$/m);
+      if (m && m[1] === vorgangId) return issue;
+    }
+    if (issues.length < 100) return null;
   }
   return null;
 }

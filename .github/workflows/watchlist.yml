@@ -22,7 +22,12 @@ jobs:
         run: |
           mkdir -p data
           git fetch origin data --depth 1 || { echo "Noch kein data-Branch."; exit 0; }
-          git show origin/data:radar.db > data/radar.db 2>/dev/null || echo "Keine DB im data-Branch."
+          if git show origin/data:radar.db > data/radar.db.tmp 2>/dev/null; then
+            mv data/radar.db.tmp data/radar.db
+          else
+            rm -f data/radar.db.tmp
+            echo "Keine DB im data-Branch."
+          fi
 
       - name: Config aus Secrets bauen
         env:
@@ -48,4 +53,7 @@ jobs:
           RADAR_REPO: ${{ github.repository }}
         run: |
           uv run radar init
+          # Sync zuerst: sonst waeren neue GitHub-Bewertungen erst nach dem
+          # naechsten wochentlichen Radar-Cron im Push-Alert sichtbar.
+          uv run radar sync-bewertungen
           uv run radar watchlist-digest --since 1d --send-mail
