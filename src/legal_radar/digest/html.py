@@ -738,20 +738,28 @@ def _shell(
     font-variant-numeric: tabular-nums;
   }}
 
-  /* Filter-Sheet: Vollbild-Overlay, slidet von unten rein. Auf Desktop
-     als zentriertes Modal (max-width). */
+  /* Filter-Sheet: Desktop = zentriertes Modal mit Backdrop.
+     Mobile-Override macht daraus ein Vollbild-Sheet. */
   .filter-sheet {{
-    display: flex; flex-direction: column;
+    display: flex; align-items: center; justify-content: center;
     position: fixed; inset: 0; z-index: 100;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 40px 20px;
+    opacity: 0; visibility: hidden;
+    transition: opacity 180ms ease;
+  }}
+  .filter-sheet-inner {{
+    display: flex; flex-direction: column;
+    width: 100%; max-width: 640px; max-height: 100%;
     background: var(--bg);
-    transform: translateY(100%);
-    transition: transform 220ms ease, opacity 220ms ease;
-    visibility: hidden; opacity: 0;
+    border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    transform: translateY(8px) scale(0.98);
+    transition: transform 220ms ease;
   }}
-  body.filter-open .filter-sheet {{
-    transform: translateY(0);
-    visibility: visible; opacity: 1;
-  }}
+  body.filter-open .filter-sheet {{ opacity: 1; visibility: visible; }}
+  body.filter-open .filter-sheet-inner {{ transform: none; }}
   body.filter-open {{ overflow: hidden; }}
 
   .sheet-header {{
@@ -776,8 +784,7 @@ def _shell(
 
   .filter-sheet-body {{
     flex: 1; overflow-y: auto;
-    padding: 20px 24px 100px;
-    max-width: 760px; margin: 0 auto; width: 100%;
+    padding: 20px 24px;
   }}
   .filter-sheet-body .filter-row {{
     display: block; margin-bottom: 22px;
@@ -798,7 +805,7 @@ def _shell(
     background: var(--bg);
   }}
   .sheet-btn-primary {{
-    display: block; width: 100%; max-width: 760px; margin: 0 auto;
+    display: block; width: 100%;
     min-height: 48px;
     background: var(--text); color: var(--bg);
     border: none; border-radius: 10px;
@@ -1210,7 +1217,20 @@ def _shell(
       -webkit-backdrop-filter: none;
     }}
 
-    /* Sheet auf Mobile: fullwidth-Body, kleinerer Padding */
+    /* Sheet auf Mobile: Vollbild ohne Backdrop, slidet von unten. */
+    .filter-sheet {{
+      background: var(--bg);
+      padding: 0;
+      align-items: stretch;
+    }}
+    .filter-sheet-inner {{
+      max-width: none; height: 100%;
+      border: none; border-radius: 0; box-shadow: none;
+      transform: translateY(100%);
+      transition: transform 220ms ease;
+    }}
+    body.filter-open .filter-sheet-inner {{ transform: translateY(0); }}
+
     .filter-sheet-body {{ padding: 16px 18px 100px; }}
     .sheet-header {{ padding: 14px 18px; }}
     .sheet-footer {{
@@ -1307,6 +1327,7 @@ def _shell(
     </div>
     <div class="filter-sheet" id="filter-sheet" role="dialog" aria-modal="true"
          aria-label="Filter">
+     <div class="filter-sheet-inner">
       <div class="sheet-header">
         <span class="sheet-title">Filter</span>
         <button type="button" id="filter-reset" class="sheet-btn-sec">Reset</button>
@@ -1353,6 +1374,7 @@ def _shell(
           Anwenden (<span id="filter-treffer">0</span>)
         </button>
       </div>
+     </div>
     </div>
   </div>
 </div>
@@ -1799,6 +1821,10 @@ def _shell(
   if (openBtn)  openBtn.addEventListener('click', sheetOeffnen);
   if (closeBtn) closeBtn.addEventListener('click', sheetSchliessen);
   if (applyBtn) applyBtn.addEventListener('click', sheetSchliessen);
+  var sheetEl = document.getElementById('filter-sheet');
+  if (sheetEl) sheetEl.addEventListener('click', function(e) {{
+    if (e.target === sheetEl) sheetSchliessen();
+  }});
   if (resetBtnSheet) resetBtnSheet.addEventListener('click', function() {{
     ['f-all', 'f-mall', 'f-kall', 'f-oscore', 'f-ball'].forEach(function(id) {{
       var el = document.getElementById(id);
