@@ -813,6 +813,55 @@ def _shell(
   }}
   .sheet-btn-primary:hover {{ opacity: 0.9; }}
 
+  /* Onboarding-Modal: gleiche Overlay-Mechanik wie .filter-sheet. */
+  .onboarding-sheet {{
+    display: none;
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0, 0, 0, 0.55);
+    align-items: center; justify-content: center;
+    padding: 40px 20px;
+  }}
+  body.onboarding-open .onboarding-sheet {{ display: flex; }}
+  body.onboarding-open {{ overflow: hidden; }}
+  .onboarding-sheet-inner {{
+    display: flex; flex-direction: column;
+    width: 100%; max-width: 560px;
+    max-height: calc(100vh - 80px);
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 14px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+    overflow: hidden;
+  }}
+  .onboarding-body {{
+    flex: 1; overflow-y: auto;
+    padding: 22px 26px;
+    font-size: 14px; line-height: 1.55;
+  }}
+  .onboarding-body p {{ margin: 0 0 12px; }}
+  .onboarding-body ul {{ margin: 8px 0 14px; padding-left: 0; list-style: none; }}
+  .onboarding-body li {{
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 12px; margin-bottom: 6px;
+    background: var(--surface-3); border-radius: 8px;
+  }}
+  .onboarding-body li .icon {{
+    flex: 0 0 auto; font-weight: 700; min-width: 22px;
+  }}
+  .onboarding-body .hinweis {{
+    font-size: 13px; color: var(--text-soft);
+    padding-top: 8px; border-top: 1px solid var(--border);
+  }}
+  .help-btn {{
+    background: none; border: 1px solid var(--border);
+    width: 28px; height: 28px; border-radius: 50%;
+    font: inherit; font-size: 14px; font-weight: 600;
+    color: var(--text-soft); cursor: pointer;
+    line-height: 1; padding: 0;
+    margin-left: 10px;
+  }}
+  .help-btn:hover {{ background: var(--surface-3); color: var(--text); }}
+
   .search-wrap {{ position: relative; }}
   .search-wrap::before {{
     content: ""; position: absolute; left: 14px; top: 50%;
@@ -1271,7 +1320,10 @@ def _shell(
 <header class="site-header">
   <div class="header-inner">
     <div class="titelzeile">
-      <h1>Legal Radar</h1>
+      <h1>Legal Radar
+        <button type="button" id="help-open" class="help-btn"
+                aria-label="Hilfe / Was ist das?" title="Was ist das?">?</button>
+      </h1>
       <div class="sub">
         Stand {stand} &nbsp;·&nbsp; {n} Vorgang{"e" if n != 1 else ""}
         &nbsp;·&nbsp;
@@ -1874,6 +1926,91 @@ def _shell(
   }});
 }})();
 </script>
+
+<div class="onboarding-sheet" id="onboarding-sheet" role="dialog"
+     aria-modal="true" aria-label="Willkommen">
+  <div class="onboarding-sheet-inner">
+    <div class="sheet-header">
+      <span class="sheet-title">Willkommen beim Legal Radar</span>
+      <button type="button" id="onboarding-close" class="sheet-close"
+              aria-label="Schliessen">&#x2715;</button>
+    </div>
+    <div class="onboarding-body">
+      <p>
+        Der Radar filtert Bundestags-Gesetzgebung nach wirtschaftlichem
+        Potenzial. Er zeigt dir Vorgaenge, die neue Pflichten, Kosten oder
+        Marktchancen ausloesen — er ist keine Rechtsberatung und keine
+        To-do-Liste.
+      </p>
+      <p>Jede Karte hat drei Bewertungsknoepfe:</p>
+      <ul>
+        <li><span class="icon">&#9733;</span>
+          <span><b>Interessant</b> &mdash; du bekommst per Mail einen
+          Push-Alert, sobald sich beim Vorgang etwas aendert
+          (Stadien-Wechsel, Ausschuss, Verkuendung).</span>
+        </li>
+        <li><span class="icon">&#9680;</span>
+          <span><b>Beobachten</b> &mdash; zurueckgestellt, ohne Alert.
+          Bleibt sichtbar, damit du spaeter erneut draufschauen kannst.</span>
+        </li>
+        <li><span class="icon">&#10005;</span>
+          <span><b>Verworfen</b> &mdash; nicht relevant. Verschwindet aus
+          der Default-Ansicht, ist aber ueber den Filter erreichbar.</span>
+        </li>
+      </ul>
+      <p>
+        Klick nochmal auf denselben Button, um die Bewertung zu entfernen.
+        Deine Klicks landen sofort als GitHub-Issues in der Datenbank —
+        auch wenn du das Fenster schliesst oder das Geraet wechselst.
+      </p>
+      <p class="hinweis">
+        Du kannst diese Erklaerung jederzeit ueber das
+        <b>?</b> neben dem Titel erneut oeffnen.
+      </p>
+    </div>
+    <div class="sheet-footer">
+      <button type="button" id="onboarding-ack" class="sheet-btn-primary">
+        Verstanden
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {{
+  var KEY = 'radar.onboarding.v1';
+  var sheet = document.getElementById('onboarding-sheet');
+  var openBtn = document.getElementById('help-open');
+  var closeBtn = document.getElementById('onboarding-close');
+  var ackBtn = document.getElementById('onboarding-ack');
+  if (!sheet) return;
+
+  function oeffnen() {{ document.body.classList.add('onboarding-open'); }}
+  function schliessen() {{
+    document.body.classList.remove('onboarding-open');
+    try {{ localStorage.setItem(KEY, '1'); }} catch (e) {{}}
+  }}
+
+  // Erst-Besuch: falls localStorage-Flag fehlt, Modal zeigen.
+  try {{
+    if (!localStorage.getItem(KEY)) oeffnen();
+  }} catch (e) {{ /* private mode: einfach nicht zeigen */ }}
+
+  if (openBtn) openBtn.addEventListener('click', oeffnen);
+  if (closeBtn) closeBtn.addEventListener('click', schliessen);
+  if (ackBtn) ackBtn.addEventListener('click', schliessen);
+  sheet.addEventListener('click', function(e) {{
+    if (e.target === sheet) schliessen();
+  }});
+  document.addEventListener('keydown', function(e) {{
+    if (e.key === 'Escape'
+        && document.body.classList.contains('onboarding-open')) {{
+      schliessen();
+    }}
+  }});
+}})();
+</script>
+
 </body>
 </html>
 """

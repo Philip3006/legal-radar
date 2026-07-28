@@ -1,0 +1,61 @@
+name: backup
+on:
+  schedule:
+    - cron: "0 3 */2 * *"   # alle 2 Tage 03:00 UTC (versetzt zum radar-Cron)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Release erstellen und alte loeschen
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: DB aus data-Branch laden
+        run: |
+          mkdir -p data
+          git fetch origin data --depth 1 || { echo "Noch kein data-Branch."; exit 0; }
+          if git show origin/data:radar.db > data/radar.db.tmp 2>/dev/null; then
+            mv data/radar.db.tmp data/radar.db
+          else
+            rm -f data/radar.db.tmp
+            echo "Keine DB im data-Branch (yet)."
+            exit 0
+          fi
+          if git show origin/data:rejected.jsonl > data/rejected.jsonl.tmp 2>/dev/null; then
+            mv data/rejected.jsonl.tmp data/rejected.jsonl
+          else
+            rm -f data/rejected.jsonl.tmp
+          fi
+
+      - name: Release erstellen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          test -f data/radar.db || { echo "Keine DB nach Load, breche ab."; exit 0; }
+          TAG="backup-$(date -u +%Y%m%d-%H%M)"
+          TITLE="Radar-Backup $(date -u +%F\ %H:%M) UTC"
+          ASSETS="data/radar.db"
+          [ -f data/rejected.jsonl ] && ASSETS="$ASSETS data/rejected.jsonl"
+          gh release create "$TAG" $ASSETS \
+            --title "$TITLE" \
+            --notes "Automatisches DB-Backup. Assets: radar.db (SQLite), evtl. rejected.jsonl."
+
+      - name: Alte Backups loeschen (>30 Tage)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Rotation: alle Releases mit Prefix 'backup-' pruefen, aeltere als 30 Tage weg.
+          # `gh release list` liefert TAB-getrennt: TAG TITLE TYPE PUBLISHED_ISO
+          cutoff=$(date -u -d '30 days ago' +%s)
+          gh release list --limit 200 --json tagName,createdAt,name \
+            --jq '.[] | select(.tagName | startswith("backup-")) | "\(.tagName)\t\(.createdAt)"' \
+            | while IFS=$'\t' read -r tag iso; do
+              ts=$(date -u -d "$iso" +%s)
+              if [ "$ts" -lt "$cutoff" ]; then
+                echo "Loesche $tag (vom $iso)"
+                gh release delete "$tag" --yes --cleanup-tag
+              fi
+            done
