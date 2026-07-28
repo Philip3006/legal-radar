@@ -1266,6 +1266,58 @@ def _shell(
 
   // Watchlist/Unwatch entfernt - 'Interessant' uebernimmt die Rolle.
 
+  // --- Bewertungs-Cache im localStorage ---
+  // Dashboard wird nur woechentlich neu gerendert. Ohne Cache waeren
+  // Klicks zwischen Cron-Laeufen nach Reload unsichtbar (Bewertung ist
+  // zwar im GitHub-Issue sicher, aber data-bewertung erst beim naechsten
+  // render-dashboard gesetzt). Cache heilt sich selbst: sobald Server
+  // aufholt, wird der Eintrag beim naechsten Laden verworfen.
+  var CACHE_KEY = 'radar.bewertungen.v1';
+  var CACHE_MAX = 1000;
+
+  function cacheLaden() {{
+    try {{
+      var raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : {{}};
+    }} catch (e) {{ return {{}}; }}
+  }}
+  function cacheSchreiben(obj) {{
+    try {{ localStorage.setItem(CACHE_KEY, JSON.stringify(obj)); }}
+    catch (e) {{ /* Quota/Private-Mode: still schlucken */ }}
+  }}
+  function cacheSpeichern(id, status) {{
+    var store = cacheLaden();
+    store[id] = {{ status: status || '', ts: Date.now() }};
+    var keys = Object.keys(store);
+    if (keys.length > CACHE_MAX) {{
+      keys.sort(function(a, b) {{ return (store[a].ts || 0) - (store[b].ts || 0); }});
+      var drop = keys.length - CACHE_MAX;
+      for (var i = 0; i < drop; i++) delete store[keys[i]];
+    }}
+    cacheSchreiben(store);
+  }}
+  function applyCache() {{
+    var store = cacheLaden();
+    var changed = false;
+    Object.keys(store).forEach(function(id) {{
+      var karte = document.querySelector('.card[data-vorgang="' + CSS.escape(id) + '"]');
+      if (!karte) return;
+      var server = karte.getAttribute('data-bewertung') || '';
+      var cached = store[id].status || '';
+      if (server === cached) {{
+        // Sync ist durch: Cache raus
+        delete store[id]; changed = true;
+      }} else if (server && server !== cached) {{
+        // Server hat gewonnen (Umbewertung woanders): Cache raus
+        delete store[id]; changed = true;
+      }} else {{
+        // Server leer, Cache hat Wert: anwenden
+        syncKartenUI(id, cached);
+      }}
+    }});
+    if (changed) cacheSchreiben(store);
+  }}
+
   // --- Bewerten: setzen / umbewerten / entfernen ---
   var BEWERTUNG_SYMBOL = {{interessant: '★', beobachten: '◐', verworfen: '✕'}};
 
@@ -1348,6 +1400,7 @@ def _shell(
       if (r.ok) {{
         var neuerStatus = effektiverStatus === 'entfernen' ? '' : status;
         syncKartenUI(id, neuerStatus);
+        cacheSpeichern(id, neuerStatus);
         toast(neuerStatus ? 'Bewertung: ' + neuerStatus : 'Bewertung entfernt');
       }} else {{
         toast('Fehler: ' + (r.data.error || r.status), true);
@@ -1387,6 +1440,7 @@ def _shell(
       if (el) el.textContent = counts[k];
     }});
   }}
+  applyCache();
   updateFortschritt();
 
   // Hero-Kacheln als Bewertungs-Filter
