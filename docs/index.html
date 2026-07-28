@@ -162,20 +162,19 @@
   }
   .toolbar-inner { max-width: 1100px; margin: 0 auto; display: grid; gap: 10px; }
 
-  /* App-Bar (mobile). Auf Desktop enthaelt sie nur die Suche fullwidth,
-     der Filter-Button ist verborgen. */
+  /* App-Bar: Suche fullwidth + Filter-Button rechts (auf allen Screens). */
   .app-bar { display: flex; align-items: center; gap: 10px; }
   .app-bar .search-wrap { flex: 1; }
   .filter-fab {
-    display: none;
-    align-items: center; gap: 6px;
-    height: 44px; padding: 0 14px;
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 40px; padding: 0 14px;
     border: 1px solid var(--border); border-radius: 10px;
     background: var(--surface-3); color: var(--text);
     font: inherit; font-size: 13px; font-weight: 600;
-    cursor: pointer;
+    cursor: pointer; white-space: nowrap;
+    transition: background 120ms ease, border-color 120ms ease;
   }
-  .filter-fab:hover { background: var(--surface-2); }
+  .filter-fab:hover { background: var(--surface-2); border-color: var(--border-strong); }
   .filter-badge {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 20px; height: 20px; padding: 0 6px;
@@ -184,12 +183,74 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Filter-Sheet: Desktop = transparenter Wrapper (filter-rows fliessen
-     inline in die Toolbar). sheet-header/-footer nur auf Mobile
-     sichtbar. */
-  .filter-sheet { display: contents; }
-  .filter-sheet-body { display: contents; }
-  .sheet-header, .sheet-footer { display: none; }
+  /* Filter-Sheet: Vollbild-Overlay, slidet von unten rein. Auf Desktop
+     als zentriertes Modal (max-width). */
+  .filter-sheet {
+    display: flex; flex-direction: column;
+    position: fixed; inset: 0; z-index: 100;
+    background: var(--bg);
+    transform: translateY(100%);
+    transition: transform 220ms ease, opacity 220ms ease;
+    visibility: hidden; opacity: 0;
+  }
+  body.filter-open .filter-sheet {
+    transform: translateY(0);
+    visibility: visible; opacity: 1;
+  }
+  body.filter-open { overflow: hidden; }
+
+  .sheet-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .sheet-title { font-size: 16px; font-weight: 700; flex: 1; }
+  .sheet-btn-sec {
+    background: none; border: none; padding: 8px 12px;
+    color: var(--text-soft); font: inherit; font-size: 13px;
+    cursor: pointer; border-radius: 8px;
+  }
+  .sheet-btn-sec:hover { background: var(--surface-3); color: var(--text); }
+  .sheet-close {
+    background: none; border: none; padding: 8px 12px;
+    color: var(--text); font-size: 18px; cursor: pointer;
+    border-radius: 8px;
+  }
+  .sheet-close:hover { background: var(--surface-3); }
+
+  .filter-sheet-body {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px 100px;
+    max-width: 760px; margin: 0 auto; width: 100%;
+  }
+  .filter-sheet-body .filter-row {
+    display: block; margin-bottom: 22px;
+  }
+  .filter-sheet-body .filter-label {
+    display: block; margin-bottom: 10px;
+    min-width: auto; padding: 0;
+  }
+  .filter-sheet-body .filter-row label {
+    display: inline-flex; margin: 0 6px 6px 0;
+    min-height: 36px; padding: 8px 14px;
+  }
+
+  .sheet-footer {
+    display: block;
+    padding: 14px 24px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .sheet-btn-primary {
+    display: block; width: 100%; max-width: 760px; margin: 0 auto;
+    min-height: 48px;
+    background: var(--text); color: var(--bg);
+    border: none; border-radius: 10px;
+    font: inherit; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+  .sheet-btn-primary:hover { opacity: 0.9; }
 
   .search-wrap { position: relative; }
   .search-wrap::before {
@@ -588,79 +649,17 @@
     .bewerten { min-height: 40px; }
     #toast { left: 16px; right: 16px; bottom: 16px; max-width: none; }
 
-    /* App-Bar zeigt Filter-Button */
-    .filter-fab { display: inline-flex; }
-    .toolbar-inner { gap: 0; }
     /* Sticky-Bar ohne Blur (bessere Performance auf Mobile) */
     .toolbar {
       background: var(--bg); backdrop-filter: none;
       -webkit-backdrop-filter: none;
     }
 
-    /* Filter-Sheet als Vollbild-Overlay */
-    .filter-sheet {
-      display: flex; flex-direction: column;
-      position: fixed; inset: 0; z-index: 100;
-      background: var(--bg);
-      transform: translateY(100%);
-      transition: transform 220ms ease;
-      visibility: hidden;
-    }
-    body.filter-open .filter-sheet {
-      transform: translateY(0);
-      visibility: visible;
-    }
-    body.filter-open { overflow: hidden; }
-
-    .sheet-header {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 18px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg);
-    }
-    .sheet-title { font-size: 16px; font-weight: 700; flex: 1; }
-    .sheet-btn-sec {
-      background: none; border: none; padding: 8px 10px;
-      color: var(--text-soft); font: inherit; font-size: 13px;
-      cursor: pointer; border-radius: 8px;
-    }
-    .sheet-btn-sec:hover { background: var(--surface-3); color: var(--text); }
-    .sheet-close {
-      background: none; border: none; padding: 8px 12px;
-      color: var(--text); font-size: 18px; cursor: pointer;
-      border-radius: 8px;
-    }
-    .sheet-close:hover { background: var(--surface-3); }
-
-    .filter-sheet-body {
-      display: block;
-      flex: 1; overflow-y: auto;
-      padding: 16px 18px 100px;
-    }
-    .filter-sheet-body .filter-row {
-      display: block; margin-bottom: 18px;
-    }
-    .filter-sheet-body .filter-label {
-      display: block; margin-bottom: 8px;
-      min-width: auto; padding: 0;
-    }
-    .filter-sheet-body .filter-row label {
-      display: inline-flex; margin: 0 6px 6px 0;
-      min-height: 36px; padding: 8px 14px;
-    }
-
+    /* Sheet auf Mobile: fullwidth-Body, kleinerer Padding */
+    .filter-sheet-body { padding: 16px 18px 100px; }
+    .sheet-header { padding: 14px 18px; }
     .sheet-footer {
-      display: block;
       padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
-      border-top: 1px solid var(--border);
-      background: var(--bg);
-    }
-    .sheet-btn-primary {
-      width: 100%; min-height: 48px;
-      background: var(--text); color: var(--bg);
-      border: none; border-radius: 10px;
-      font: inherit; font-size: 15px; font-weight: 600;
-      cursor: pointer;
     }
   }
 
@@ -6046,6 +6045,30 @@
 
   restoreFromUrl();
   applyFilters();
+
+  // --- Deselect: zweiter Klick auf aktiven Chip = zurueck auf Default ---
+  // Native Radio-Buttons feuern kein change-Event, wenn schon checked.
+  // Wir fangen den Klick auf dem Label ab: wenn das zugehoerige Radio
+  // schon aktiv und nicht der Default ist, verhindern wir das Default-
+  // Toggling und setzen das Default-Radio derselben Gruppe.
+  var DEFAULTS = {
+    fs: 'f-all', ft: 'f-mall', fk: 'f-kall',
+    fo: 'f-oscore', fb: 'f-ball'
+  };
+  document.querySelectorAll('.filter-row label[for]').forEach(function(lbl) {
+    lbl.addEventListener('click', function(e) {
+      var radio = document.getElementById(lbl.htmlFor);
+      if (!radio || !radio.checked) return;
+      var def = DEFAULTS[radio.name];
+      if (!def || def === radio.id) return;  // schon Default -> nichts
+      e.preventDefault();
+      var defRadio = document.getElementById(def);
+      if (defRadio) {
+        defRadio.checked = true;
+        applyFilters();
+      }
+    });
+  });
 
   // --- Mobile Filter-Sheet ---
   function sheetOeffnen() { document.body.classList.add('filter-open'); }
