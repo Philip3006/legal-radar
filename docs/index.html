@@ -186,26 +186,25 @@
   /* Filter-Sheet: Desktop = zentriertes Modal mit Backdrop.
      Mobile-Override macht daraus ein Vollbild-Sheet. */
   .filter-sheet {
-    display: flex; align-items: center; justify-content: center;
-    position: fixed; inset: 0; z-index: 100;
-    background: rgba(15, 20, 30, 0.65);
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center; justify-content: center;
     padding: 40px 20px;
-    opacity: 0; visibility: hidden;
-    transition: opacity 180ms ease;
   }
+  body.filter-open .filter-sheet { display: flex; }
+  body.filter-open { overflow: hidden; }
+
   .filter-sheet-inner {
     display: flex; flex-direction: column;
-    width: 100%; max-width: 880px; max-height: 100%;
-    background: var(--bg);
-    border: 1px solid var(--border-strong); border-radius: 16px;
-    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+    width: 100%; max-width: 880px;
+    max-height: calc(100vh - 80px);
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 14px;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
     overflow: hidden;
-    transform: translateY(12px) scale(0.97);
-    transition: transform 220ms ease;
   }
-  body.filter-open .filter-sheet { opacity: 1; visibility: visible; }
-  body.filter-open .filter-sheet-inner { transform: none; }
-  body.filter-open { overflow: hidden; }
 
   .sheet-header {
     display: flex; align-items: center; gap: 12px;
@@ -662,19 +661,16 @@
       -webkit-backdrop-filter: none;
     }
 
-    /* Sheet auf Mobile: Vollbild ohne Backdrop, slidet von unten. */
+    /* Sheet auf Mobile: Vollbild ohne Backdrop. */
     .filter-sheet {
-      background: var(--bg);
+      background: #ffffff;
       padding: 0;
       align-items: stretch;
     }
     .filter-sheet-inner {
-      max-width: none; height: 100%;
+      max-width: none; max-height: none; height: 100%;
       border: none; border-radius: 0; box-shadow: none;
-      transform: translateY(100%);
-      transition: transform 220ms ease;
     }
-    body.filter-open .filter-sheet-inner { transform: translateY(0); }
 
     .filter-sheet-body { padding: 16px 18px 100px; }
     .sheet-header { padding: 14px 18px; }
