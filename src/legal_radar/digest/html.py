@@ -743,19 +743,19 @@ def _shell(
   .filter-sheet {{
     display: flex; align-items: center; justify-content: center;
     position: fixed; inset: 0; z-index: 100;
-    background: rgba(0, 0, 0, 0.45);
+    background: rgba(15, 20, 30, 0.65);
     padding: 40px 20px;
     opacity: 0; visibility: hidden;
     transition: opacity 180ms ease;
   }}
   .filter-sheet-inner {{
     display: flex; flex-direction: column;
-    width: 100%; max-width: 640px; max-height: 100%;
+    width: 100%; max-width: 880px; max-height: 100%;
     background: var(--bg);
-    border: 1px solid var(--border); border-radius: 14px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--border-strong); border-radius: 16px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
     overflow: hidden;
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(12px) scale(0.97);
     transition: transform 220ms ease;
   }}
   body.filter-open .filter-sheet {{ opacity: 1; visibility: visible; }}
