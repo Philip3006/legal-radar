@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: astral-sh/setup-uv@v5   # brauchen wir nur fuers Alert-Step
+
+      - run: uv sync --frozen
+
       - name: DB aus data-Branch laden
         run: |
           mkdir -p data
@@ -59,3 +63,14 @@ jobs:
                 gh release delete "$tag" --yes --cleanup-tag
               fi
             done
+
+      - name: Alert bei Fehler
+        if: failure()
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          DIGEST_ABSENDER: ${{ secrets.DIGEST_ABSENDER }}
+        run: |
+          uv run python -m legal_radar.core.alert \
+            "Radar-Alert: ${{ github.workflow }} rot" \
+            "Workflow ${{ github.workflow }} (Run ${{ github.run_id }}) ist fehlgeschlagen. Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

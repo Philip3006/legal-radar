@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+import os
+import subprocess
+import urllib.error
+import urllib.request
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import anthropic
@@ -495,6 +499,142 @@ def sync_bewertungen() -> None:
         f"Sync: {n_neu} neu, {n_upd} aktualisiert, {n_gel} entfernt, "
         f"{n_skip} unbekannte IDs uebersprungen."
     )
+
+
+# --- Health-Check ------------------------------------------------------------
+# Wird taeglich vom health.yml-Workflow ausgefuehrt. Exit-Code != 0
+# triggert den Failure-Alert-Step, der eine Mail an ALERT_EMAIL schickt.
+# Alle Schwellwerte konservativ gewaehlt: Silent-Fails erkennen, ohne
+# bei jedem Wackler zu piepsen.
+
+_MIN_VORGAENGE = 500
+_MAX_CRON_ALTER_TAGE = 8
+_MAX_BACKUP_ALTER_TAGE = 3
+_MAX_SYNC_ALTER_TAGE = 3
+_WORKER_URL = "https://legal-radar-watch.sportsbrain-philip.workers.dev/"
+
+
+def _alter_tage(iso: str) -> float:
+    dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - dt).total_seconds() / 86400
+
+
+def _check_db(con) -> tuple[bool, str]:
+    n = con.execute("SELECT COUNT(*) FROM vorgang").fetchone()[0]
+    if n < _MIN_VORGAENGE:
+        return False, f"Nur {n} Vorgaenge (Schwelle {_MIN_VORGAENGE})"
+    return True, f"{n} Vorgaenge"
+
+
+def _check_cron_aktuell(rejected_pfad: Path) -> tuple[bool, str]:
+    if not rejected_pfad.exists():
+        return False, "rejected.jsonl fehlt - Cron nie gelaufen?"
+    juengster: str | None = None
+    for line in rejected_pfad.read_text().splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if entry.get("event") == "run_start" and (juengster is None or entry["ts"] > juengster):
+            juengster = entry["ts"]
+    if juengster is None:
+        return False, "kein run_start-Eintrag in rejected.jsonl"
+    alter = _alter_tage(juengster)
+    if alter > _MAX_CRON_ALTER_TAGE:
+        return False, f"letzter Cron vor {alter:.1f} Tagen (max {_MAX_CRON_ALTER_TAGE})"
+    return True, f"letzter Cron vor {alter:.1f} Tagen"
+
+
+def _check_backup_aktuell() -> tuple[bool, str]:
+    if not os.getenv("GITHUB_TOKEN"):
+        return True, "GITHUB_TOKEN fehlt, Check uebersprungen"
+    try:
+        r = subprocess.run(
+            [
+                "gh",
+                "release",
+                "list",
+                "--limit",
+                "20",
+                "--json",
+                "tagName,createdAt",
+                "--jq",
+                '[.[] | select(.tagName | startswith("backup-"))] | max_by(.createdAt)',
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        data = json.loads(r.stdout or "null")
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        return False, f"gh release list fehlgeschlagen: {e}"
+    if not data:
+        return False, "kein backup-Release gefunden"
+    alter = _alter_tage(data["createdAt"])
+    if alter > _MAX_BACKUP_ALTER_TAGE:
+        return False, f"letztes Backup vor {alter:.1f} Tagen (max {_MAX_BACKUP_ALTER_TAGE})"
+    return True, f"letztes Backup vor {alter:.1f} Tagen ({data['tagName']})"
+
+
+def _check_worker() -> tuple[bool, str]:
+    try:
+        req = urllib.request.Request(_WORKER_URL, headers={"User-Agent": "radar-health"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status != 200:
+                return False, f"Worker HTTP {resp.status}"
+            body = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as e:
+        return False, f"Worker unerreichbar: {e}"
+    if not body.get("ok"):
+        return False, f"Worker antwortet ohne ok=true: {body}"
+    return True, "Worker OK"
+
+
+def _check_bewertungs_sync(con) -> tuple[bool, str]:
+    row = con.execute("SELECT MAX(ts) AS max_ts, COUNT(*) AS n FROM bewertung_user").fetchone()
+    if not row or row["n"] == 0:
+        return True, "keine Bewertungen, Check uebersprungen"
+    max_ts = row["max_ts"]
+    if not max_ts:
+        return True, "MAX(ts) leer, Check uebersprungen"
+    alter = _alter_tage(max_ts)
+    if alter > _MAX_SYNC_ALTER_TAGE:
+        return False, f"juengste Bewertung vor {alter:.1f} Tagen (max {_MAX_SYNC_ALTER_TAGE})"
+    return True, f"juengste Bewertung vor {alter:.1f} Tagen"
+
+
+@app.command()
+def health(as_json: bool = typer.Option(False, "--json", help="JSON-Report ausgeben")) -> None:
+    """Prueft DB, Cron-Aktualitaet, Backup, Worker, Bewertungs-Sync. Exit 1 bei rot."""
+    s = Settings.load()
+    con = db.connect(s.db_path)
+    db.migrate(con)
+
+    checks: dict[str, tuple[bool, str]] = {
+        "db": _check_db(con),
+        "cron_aktuell": _check_cron_aktuell(Path("data/rejected.jsonl")),
+        "backup_aktuell": _check_backup_aktuell(),
+        "worker": _check_worker(),
+        "bewertungs_sync": _check_bewertungs_sync(con),
+    }
+
+    alle_gruen = all(ok for ok, _ in checks.values())
+
+    if as_json:
+        report = {name: {"ok": ok, "detail": detail} for name, (ok, detail) in checks.items()}
+        report["all_green"] = alle_gruen
+        typer.echo(json.dumps(report, indent=2))
+    else:
+        for name, (ok, detail) in checks.items():
+            marker = "OK  " if ok else "FAIL"
+            typer.echo(f"[{marker}] {name}: {detail}")
+        typer.echo("---")
+        typer.echo("health: all green" if alle_gruen else "health: DEGRADED")
+
+    if not alle_gruen:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

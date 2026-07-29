@@ -1,0 +1,51 @@
+name: health
+on:
+  schedule:
+    - cron: "0 7 * * *"   # taeglich 07:00 UTC (nach radar Montag + watchlist 06:00)
+  workflow_dispatch:
+
+permissions:
+  contents: read   # gh release list (nur lesen)
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --frozen
+
+      - name: DB + rejected aus data-Branch laden
+        run: |
+          mkdir -p data
+          git fetch origin data --depth 1 || { echo "Noch kein data-Branch."; exit 0; }
+          if git show origin/data:radar.db > data/radar.db.tmp 2>/dev/null; then
+            mv data/radar.db.tmp data/radar.db
+          else
+            rm -f data/radar.db.tmp
+          fi
+          if git show origin/data:rejected.jsonl > data/rejected.jsonl.tmp 2>/dev/null; then
+            mv data/rejected.jsonl.tmp data/rejected.jsonl
+          else
+            rm -f data/rejected.jsonl.tmp
+          fi
+
+      - name: Health-Check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          uv run radar init
+          uv run radar health --json
+
+      - name: Alert bei Fehler
+        if: failure()
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          DIGEST_ABSENDER: ${{ secrets.DIGEST_ABSENDER }}
+        run: |
+          uv run python -m legal_radar.core.alert \
+            "Radar-Alert: Health-Check DEGRADED" \
+            "Ein oder mehrere Health-Checks sind rot. Details im Run-Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

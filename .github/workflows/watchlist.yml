@@ -57,3 +57,14 @@ jobs:
           # naechsten wochentlichen Radar-Cron im Push-Alert sichtbar.
           uv run radar sync-bewertungen
           uv run radar watchlist-digest --since 1d --send-mail
+
+      - name: Alert bei Fehler
+        if: failure()
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          DIGEST_ABSENDER: ${{ secrets.DIGEST_ABSENDER }}
+        run: |
+          uv run python -m legal_radar.core.alert \
+            "Radar-Alert: ${{ github.workflow }} rot" \
+            "Workflow ${{ github.workflow }} (Run ${{ github.run_id }}) ist fehlgeschlagen. Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

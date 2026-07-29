@@ -136,3 +136,14 @@ jobs:
             git commit -m "data: radar.db snapshot $(date -u +%F)"
             git push origin data
           fi
+
+      - name: Alert bei Fehler
+        if: failure()
+        env:
+          SMTP_URL: ${{ secrets.SMTP_URL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          DIGEST_ABSENDER: ${{ secrets.DIGEST_ABSENDER }}
+        run: |
+          uv run python -m legal_radar.core.alert \
+            "Radar-Alert: ${{ github.workflow }} rot" \
+            "Workflow ${{ github.workflow }} (Run ${{ github.run_id }}) ist fehlgeschlagen. Log: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
