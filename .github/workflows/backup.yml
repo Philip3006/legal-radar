@@ -54,8 +54,10 @@ jobs:
           # Rotation: alle Releases mit Prefix 'backup-' pruefen, aeltere als 30 Tage weg.
           # `gh release list` liefert TAB-getrennt: TAG TITLE TYPE PUBLISHED_ISO
           cutoff=$(date -u -d '30 days ago' +%s)
-          gh release list --limit 200 --json tagName,createdAt,name \
-            --jq '.[] | select(.tagName | startswith("backup-")) | "\(.tagName)\t\(.createdAt)"' \
+          # publishedAt statt createdAt: createdAt klebt beim ersten Release
+          # und wuerde Rotation blockieren.
+          gh release list --limit 200 --json tagName,publishedAt,name \
+            --jq '.[] | select(.tagName | startswith("backup-")) | "\(.tagName)\t\(.publishedAt)"' \
             | while IFS=$'\t' read -r tag iso; do
               ts=$(date -u -d "$iso" +%s)
               if [ "$ts" -lt "$cutoff" ]; then

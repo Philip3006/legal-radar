@@ -550,6 +550,8 @@ def _check_cron_aktuell(rejected_pfad: Path) -> tuple[bool, str]:
 def _check_backup_aktuell() -> tuple[bool, str]:
     if not os.getenv("GITHUB_TOKEN"):
         return True, "GITHUB_TOKEN fehlt, Check uebersprungen"
+    # publishedAt statt createdAt: bei wiederholten `gh release create` klebt
+    # createdAt beim allerersten Release, publishedAt ist der echte Zeitpunkt.
     try:
         r = subprocess.run(
             [
@@ -559,9 +561,9 @@ def _check_backup_aktuell() -> tuple[bool, str]:
                 "--limit",
                 "20",
                 "--json",
-                "tagName,createdAt",
+                "tagName,publishedAt",
                 "--jq",
-                '[.[] | select(.tagName | startswith("backup-"))] | max_by(.createdAt)',
+                '[.[] | select(.tagName | startswith("backup-"))] | max_by(.publishedAt)',
             ],
             check=True,
             capture_output=True,
@@ -572,7 +574,7 @@ def _check_backup_aktuell() -> tuple[bool, str]:
         return False, f"gh release list fehlgeschlagen: {e}"
     if not data:
         return False, "kein backup-Release gefunden"
-    alter = _alter_tage(data["createdAt"])
+    alter = _alter_tage(data["publishedAt"])
     if alter > _MAX_BACKUP_ALTER_TAGE:
         return False, f"letztes Backup vor {alter:.1f} Tagen (max {_MAX_BACKUP_ALTER_TAGE})"
     return True, f"letztes Backup vor {alter:.1f} Tagen ({data['tagName']})"
